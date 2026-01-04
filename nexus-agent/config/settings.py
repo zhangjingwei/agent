@@ -63,17 +63,6 @@ def get_agent_config() -> AgentConfig:
 
     # MCP服务器配置
     mcp_servers = [
-        # MCP 文件系统工具 (已验证可用)
-        MCPConfig(
-            id="filesystem",
-            name="文件系统工具",
-            description="提供文件系统操作工具",
-            command="npx",
-            args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
-            env={},
-            enabled=True
-        ),
-
         # 彩云天气工具 (需要调试，可使用 MCP inspector)
         # 如需启用，请先运行:
         # npx @modelcontextprotocol/inspector uvx mcp-caiyun-weather

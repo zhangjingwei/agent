@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 import structlog
 
 from core import UniversalAgent
-from config.models import AgentConfig
+from config.models import AgentConfig, ChatRequest
 
 
 # 配置结构化日志
@@ -131,43 +131,26 @@ async def health_check():
     if agent is None:
         raise HTTPException(status_code=503, detail="Agent not initialized")
 
+    import datetime
     return {
         "status": "healthy",
         "agent_id": agent.orchestrator.config.id,
         "tools_count": len(agent.orchestrator.tool_registry._tools),
-        "timestamp": "2024-01-01T00:00:00Z"  # 应该使用实际时间戳
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
     }
 
 
-@app.post("/sessions")
-async def create_session(metadata: Optional[Dict[str, Any]] = None):
-    """创建会话"""
+# Session 由Go网关统一管理
+# 推理引擎无状态
+@app.post("/chat")
+async def chat_with_history(chat_request: ChatRequest):
+    """发送消息（带完整历史上下文）"""
     if agent is None:
         raise HTTPException(status_code=503, detail="Agent not available")
 
     try:
-        session = await agent.create_session(metadata)
-        return {
-            "session_id": session.id,
-            "agent_id": session.agent_id,
-            "created_at": session.created_at.isoformat()
-        }
-    except Exception as e:
-        logger.error("Failed to create session", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/sessions/{session_id}/chat")
-async def chat(session_id: str, request: Dict[str, Any]):
-    """发送消息"""
-    if agent is None:
-        raise HTTPException(status_code=503, detail="Agent not available")
-
-    try:
-        from config.models import ChatRequest
-        chat_request = ChatRequest(**request)
-
-        response = await agent.chat(session_id, chat_request)
+        # 传递消息历史作为上下文
+        response = await agent.chat_with_history(chat_request)
 
         return {
             "message": response.message,
@@ -186,52 +169,12 @@ async def chat(session_id: str, request: Dict[str, Any]):
             "processing_time": response.processing_time
         }
 
+    except ValueError as e:
+        logger.warning("Invalid chat request", error=str(e))
+        raise HTTPException(status_code=400, detail=f"Invalid request: {str(e)}")
     except Exception as e:
-        logger.error("Chat failed", session_id=session_id, error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/sessions/{session_id}/history")
-async def get_history(session_id: str, limit: Optional[int] = None):
-    """获取会话历史"""
-    if agent is None:
-        raise HTTPException(status_code=503, detail="Agent not available")
-
-    try:
-        messages = await agent.get_history(session_id, limit)
-
-        return {
-            "messages": [
-                {
-                    "id": message.id,
-                    "role": message.role.value,
-                    "content": message.content,
-                    "timestamp": message.timestamp.isoformat(),
-                    "metadata": message.metadata
-                }
-                for message in messages
-            ]
-        }
-
-    except Exception as e:
-        logger.error("Failed to get history", session_id=session_id, error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.delete("/sessions/{session_id}")
-async def clear_session(session_id: str):
-    """清除会话"""
-    if agent is None:
-        raise HTTPException(status_code=503, detail="Agent not available")
-
-    try:
-        success = await agent.clear_session(session_id)
-        logger.info("Session cleared successfully", session_id=session_id)
-        return {"success": success}
-
-    except Exception as e:
-        logger.error("Failed to clear session", session_id=session_id, error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Chat processing failed", error=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/tools")

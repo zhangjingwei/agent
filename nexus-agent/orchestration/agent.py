@@ -71,11 +71,28 @@ class OrchestratorAgent:
         """注册内置工具 - 使用配置驱动的方式"""
         self.tool_manager.register_tools_from_config(self.tool_registry, self.config.tools)
 
-    async def chat(self, session_id: str, request: ChatRequest) -> ChatResponse:
-        """处理对话"""
+    async def chat_with_history(self, request: ChatRequest) -> ChatResponse:
+        """处理带历史上下文的对话"""
+        # 转换消息历史为LangChain格式
+        messages = []
+        if hasattr(request, 'message_history') and request.message_history:
+            for msg_data in request.message_history:
+                role = msg_data.get("role", "").lower()
+                content = msg_data.get("content", "")
+                if role == "user":
+                    messages.append(HumanMessage(content=content))
+                elif role == "assistant":
+                    messages.append(AIMessage(content=content))
+
+        # 添加当前用户消息
+        messages.append(HumanMessage(content=request.message))
+
+        # 生成session_id（如果没有的话）
+        session_id = getattr(request, 'session_id', None) or f"temp-{hash(request.message)}"
+
         # 准备初始状态
         initial_state: AgentState = {
-            "messages": [HumanMessage(content=request.message)],
+            "messages": messages,
             "session_id": session_id,
             "agent_id": self.config.id,
             "tool_calls": [],
@@ -102,6 +119,7 @@ class OrchestratorAgent:
             tool_calls=final_state["tool_calls"],
             processing_time=final_state["processing_time"]
         )
+
 
     async def cleanup(self):
         """清理资源"""

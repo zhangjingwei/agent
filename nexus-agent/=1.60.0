@@ -1,0 +1,18 @@
+Looking in indexes: https://mirrors.aliyun.com/pypi/simple/
+Collecting grpcio-tools
+  Downloading https://mirrors.aliyun.com/pypi/packages/a6/d6/53798827d821098219e58518b6db52161ce4985620850aa74ce3795da8a7/grpcio_tools-1.76.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (2.7 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.7/2.7 MB 3.7 MB/s  0:00:00
+
+Collecting protobuf<7.0.0,>=6.31.1 (from grpcio-tools)
+  Downloading https://mirrors.aliyun.com/pypi/packages/56/13/333b8f421738f149d4fe5e49553bc2a2ab75235486259f689b4b91f96cec/protobuf-6.33.2-cp39-abi3-manylinux2014_x86_64.whl (323 kB)
+Collecting grpcio>=1.76.0 (from grpcio-tools)
+  Downloading https://mirrors.aliyun.com/pypi/packages/f5/86/f6ec2164f743d9609691115ae8ece098c76b894ebe4f7c94a655c6b03e98/grpcio-1.76.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (6.6 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.6/6.6 MB 3.9 MB/s  0:00:01
+
+Collecting setuptools (from grpcio-tools)
+  Using cached https://mirrors.aliyun.com/pypi/packages/a3/dc/17031897dae0efacfea57dfd3a82fdd2a2aeb58e0ff71b77b87e44edc772/setuptools-80.9.0-py3-none-any.whl (1.2 MB)
+Requirement already satisfied: typing-extensions~=4.12 in /media/zhangjingwei/DATA1/workspace/prodject/venv/lib/python3.12/site-packages (from grpcio>=1.76.0->grpcio-tools) (4.15.0)
+Installing collected packages: setuptools, protobuf, grpcio, grpcio-tools
+
+
+Successfully installed grpcio-1.76.0 grpcio-tools-1.76.0 protobuf-6.33.2 setuptools-80.9.0

@@ -171,6 +171,9 @@ class ToolManager:
                 logger.error(f"连接MCP服务器失败 {config.id}: {str(e)}")
                 logger.warning(f"MCP服务器 {config.id} 的工具将不可用，请检查服务器配置或网络连接")
 
+
+
+
     def _find_mcp_tool_config(self, configs: list[MCPToolConfig],
                              server_id: str, tool_name: str) -> Optional[MCPToolConfig]:
         """查找MCP工具配置"""

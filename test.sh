@@ -14,7 +14,7 @@ echo "\"$HEALTH_STATUS\""
 
 # 创建会话
 echo "2. 创建会话:"
-SESSION=$(curl -s --max-time 10 -X POST $BASE_URL/sessions \
+SESSION=$(curl -s --max-time 10 -X POST $BASE_URL/api/v1/sessions \
   -H "Content-Type: application/json" \
   -d '{"metadata": {"test": true}}')
 SESSION_ID=$(echo $SESSION | jq -r '.session_id')
@@ -28,9 +28,9 @@ echo "会话ID: $SESSION_ID"
 echo "3. 测试Agent高级数学计算功能:"
 echo "发送: '计算 sqrt(16) + sin(pi/2)'"
 
-CHAT_RESPONSE=$(curl -s --max-time 30 -X POST $BASE_URL/sessions/$SESSION_ID/chat \
+CHAT_RESPONSE=$(curl -s --max-time 30 -X POST $BASE_URL/api/v1/chat \
   -H "Content-Type: application/json" \
-  -d '{"message": "计算 sqrt(16) + sin(pi/2)"}')
+  -d "{\"session_id\": \"$SESSION_ID\", \"message\": \"计算 sqrt(16) + sin(pi/2)\", \"metadata\": {}}")
 
 # 检查响应是否成功
 if [ $? -ne 0 ]; then
@@ -62,9 +62,9 @@ echo ""
 echo "3b. 测试Agent复杂数学表达式:"
 echo "发送: '计算 2**3 + factorial(4) / 6'"
 
-CHAT_RESPONSE2=$(curl -s --max-time 30 -X POST $BASE_URL/sessions/$SESSION_ID/chat \
+CHAT_RESPONSE2=$(curl -s --max-time 30 -X POST $BASE_URL/api/v1/chat \
   -H "Content-Type: application/json" \
-  -d '{"message": "计算 2**3 + factorial(4) / 6"}')
+  -d "{\"session_id\": \"$SESSION_ID\", \"message\": \"计算 2**3 + factorial(4) / 6\", \"metadata\": {}}")
 
 # 检查响应是否成功
 if [ $? -ne 0 ]; then
@@ -96,9 +96,9 @@ echo ""
 echo "3c. 测试Agent MCP天气功能:"
 echo "发送: '北京现在的天气怎么样？'"
 
-CHAT_RESPONSE3=$(curl -s --max-time 30 -X POST $BASE_URL/sessions/$SESSION_ID/chat \
+CHAT_RESPONSE3=$(curl -s --max-time 30 -X POST $BASE_URL/api/v1/chat \
   -H "Content-Type: application/json" \
-  -d '{"message": "北京现在的天气怎么样？"}')
+  -d "{\"session_id\": \"$SESSION_ID\", \"message\": \"北京现在的天气怎么样？\", \"metadata\": {}}")
 
 # 检查响应是否成功
 if [ $? -ne 0 ]; then
@@ -126,7 +126,7 @@ fi
 
 # 检查会话历史
 echo "5. 检查会话历史:"
-HISTORY=$(curl -s --max-time 10 -X GET $BASE_URL/sessions/$SESSION_ID/history 2>/dev/null)
+HISTORY=$(curl -s --max-time 10 -X GET $BASE_URL/api/v1/sessions/$SESSION_ID/history 2>/dev/null)
 if [ $? -eq 0 ] && [ "$HISTORY" != "null" ]; then
     MESSAGE_COUNT=$(echo $HISTORY | jq '.messages | length')
     echo "会话消息数量: $MESSAGE_COUNT"

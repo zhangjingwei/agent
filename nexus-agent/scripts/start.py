@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-Universal Agent MVP 启动脚本
+Nexus Agent Core - AI服务启动脚本
+
+此脚本启动Python AI核心服务，提供LangGraph工作流和MCP工具编排。
+服务运行在8082端口，通过HTTP/2与Go API网关通信。
 """
 
 import os
@@ -55,7 +58,7 @@ def get_current_llm_info():
 
 def main():
     """主启动函数"""
-    logger.info("Starting Universal Agent MVP...")
+    logger.info("Starting Nexus Agent Core (AI Service)...")
 
     # 检查环境
     if not check_environment():
@@ -67,14 +70,15 @@ def main():
 
     # 获取服务器配置
     host = os.getenv("API_HOST", "0.0.0.0")
-    port = int(os.getenv("API_PORT", "8080"))
+    port = int(os.getenv("API_PORT", "8082"))  # AI核心服务端口
     log_level = os.getenv("LOG_LEVEL", "INFO")
 
     # 设置日志级别
     numeric_level = getattr(logging, log_level.upper(), logging.INFO)
     logging.getLogger().setLevel(numeric_level)
 
-    logger.info(f"Starting server on {host}:{port}")
+    logger.info(f"Starting Nexus Agent Core (AI service) on {host}:{port}")
+    logger.info("This service provides AI inference and MCP tool orchestration via HTTP/2")
 
     try:
         # 启动FastAPI服务器
@@ -87,8 +91,9 @@ def main():
             port=port,
             log_level=log_level.lower(),
             access_log=True,
-            server_header=False,
-            date_header=False
+            server_header=True,  # 显示服务标识
+            date_header=False,
+            # HTTP/2 通过客户端自动协商启用
         )
 
     except KeyboardInterrupt:

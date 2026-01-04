@@ -1,5 +1,5 @@
 """
-MCP客户端实现 - 仅支持 stdio 传输
+MCP客户端实现 - 支持 stdio 传输和 gRPC 传输
 """
 
 import asyncio

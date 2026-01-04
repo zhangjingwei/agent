@@ -38,6 +38,7 @@ class ChatRequest(BaseModel):
     message: str
     stream: bool = False
     metadata: Optional[Dict[str, Any]] = None
+    message_history: Optional[List[Dict[str, Any]]] = None
 
 
 class ChatResponse(BaseModel):
