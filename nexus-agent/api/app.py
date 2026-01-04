@@ -8,7 +8,7 @@ import logging
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 import structlog
 
 from core import UniversalAgent
@@ -174,6 +174,37 @@ async def chat_with_history(chat_request: ChatRequest):
         raise HTTPException(status_code=400, detail=f"Invalid request: {str(e)}")
     except Exception as e:
         logger.error("Chat processing failed", error=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.post("/chat/stream")
+async def chat_stream(chat_request: ChatRequest):
+    """流式对话接口"""
+    if agent is None:
+        raise HTTPException(status_code=503, detail="Agent not available")
+
+    try:
+        async def generate():
+            async for chunk in agent.chat_with_history_stream(chat_request):
+                # SSE格式
+                data = f"data: {chunk.model_dump_json()}\n\n"
+                yield data.encode('utf-8')
+
+        return StreamingResponse(
+            generate(),
+            media_type="text/plain",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Access-Control-Allow-Origin": "*",
+            }
+        )
+
+    except ValueError as e:
+        logger.warning("Invalid chat stream request", error=str(e))
+        raise HTTPException(status_code=400, detail=f"Invalid request: {str(e)}")
+    except Exception as e:
+        logger.error("Streaming chat processing failed", error=str(e))
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

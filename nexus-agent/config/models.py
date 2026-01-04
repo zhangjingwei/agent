@@ -41,6 +41,26 @@ class ChatRequest(BaseModel):
     message_history: Optional[List[Dict[str, Any]]] = None
 
 
+class StreamChunk(BaseModel):
+    """流式响应数据块"""
+    type: str  # "content", "tool_call_start", "tool_call_end", "error", "done"
+    content: Optional[str] = None
+    tool_call: Optional[Dict[str, Any]] = None
+    tool_call_id: Optional[str] = None
+    result: Optional[Any] = None
+    error: Optional[str] = None
+    usage: Optional[Dict[str, Any]] = None
+    processing_time: Optional[float] = None
+    done: bool = False
+    timestamp: Optional[datetime] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class StreamingChatResponse(BaseModel):
+    """流式对话响应"""
+    chunks: List[StreamChunk] = Field(default_factory=list)
+
+
 class ChatResponse(BaseModel):
     """对话响应"""
     message: str

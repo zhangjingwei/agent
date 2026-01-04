@@ -109,6 +109,7 @@ func setupRoutes(r *gin.Engine, handler *api.Handler) {
 	{
 		// Chat endpoints
 		apiV1.POST("/chat", handler.Chat)
+		apiV1.POST("/chat/stream", handler.ChatStream)
 		apiV1.POST("/sessions", handler.CreateSession)
 		apiV1.GET("/sessions/:session_id/history", handler.GetHistory)
 		apiV1.DELETE("/sessions/:session_id", handler.ClearSession)

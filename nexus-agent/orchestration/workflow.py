@@ -4,13 +4,14 @@
 
 import time
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, AsyncIterator
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 from .state import AgentState
 from tools.executor import ToolExecutor
+from config.models import StreamChunk
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +147,11 @@ class WorkflowManager:
         """设置LLM实例"""
         self._llm_with_tools = llm_with_tools
 
+    def set_streaming_llm(self, streaming_llm, langchain_tools=None):
+        """设置流式LLM实例"""
+        self._streaming_llm = streaming_llm
+        self._langchain_tools = langchain_tools or []
+
     async def execute(self, initial_state: AgentState, config: Dict[str, Any]) -> AgentState:
         """执行工作流"""
         if self.checkpointer:
@@ -153,3 +159,42 @@ class WorkflowManager:
         else:
             # 不使用checkpointer的简单执行
             return await self.graph.ainvoke(initial_state)
+
+    async def execute_stream(self, initial_state: AgentState, config: Dict[str, Any]) -> AsyncIterator[StreamChunk]:
+        """流式执行工作流"""
+        streaming_llm = getattr(self, '_streaming_llm', None)
+        if not streaming_llm:
+            error_msg = "Streaming LLM not configured"
+            logger.error(error_msg)
+            yield StreamChunk(
+                type="error",
+                error=error_msg,
+                done=True
+            )
+            return
+
+        # 简化版本：直接流式调用LLM，不支持复杂的工具调用循环
+        messages = initial_state["messages"]
+        tools = getattr(self, '_langchain_tools', [])
+
+        try:
+            async for chunk_data in streaming_llm.stream_chat_with_tools(messages, tools):
+                yield StreamChunk(**chunk_data)
+
+            # 发送完成信号
+            processing_time = time.time() - initial_state.get("processing_time", time.time())
+
+            yield StreamChunk(
+                type="done",
+                done=True,
+                processing_time=processing_time
+            )
+
+        except Exception as e:
+            logger.error(f"流式执行失败: {e}")
+            yield StreamChunk(
+                type="error",
+                error=str(e),
+                done=True
+            )
+            return

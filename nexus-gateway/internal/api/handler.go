@@ -408,3 +408,146 @@ func (h *Handler) callPythonWithRetry(req *http.Request, url, sessionID string) 
 	// Final attempt without retry
 	return h.httpClient.Do(req)
 }
+
+// ChatStream handles streaming chat requests
+func (h *Handler) ChatStream(c *gin.Context) {
+	var req api.ChatRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.Error("Invalid chat stream request", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+		return
+	}
+
+	h.logger.Info("Chat stream request",
+		zap.String("session_id", req.SessionID),
+		zap.String("message", req.Message[:min(100, len(req.Message))]))
+
+	// Validate request
+	if req.Message == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Message is required"})
+		return
+	}
+
+	// Get full message history for context
+	var messageHistory []map[string]interface{}
+	if h.sessionManager != nil {
+		messages, err := h.sessionManager.GetHistory(req.SessionID, nil)
+		if err != nil {
+			h.logger.Warn("Failed to get message history, proceeding without context", zap.Error(err),
+				zap.String("session_id", req.SessionID))
+		} else {
+			// Format messages for Python service
+			messageHistory = make([]map[string]interface{}, len(messages))
+			for i, msg := range messages {
+				messageHistory[i] = map[string]interface{}{
+					"role":      msg.Role,
+					"content":   msg.Content,
+					"timestamp": msg.Timestamp.Format(time.RFC3339),
+					"metadata":  msg.Metadata,
+				}
+			}
+		}
+
+		// Add current user message to session
+		err = h.sessionManager.AddMessage(req.SessionID, "user", req.Message, req.Metadata)
+		if err != nil {
+			h.logger.Error("Failed to add user message to session", zap.Error(err),
+				zap.String("session_id", req.SessionID))
+			// Continue processing even if session save fails
+		}
+	}
+
+	// Prepare request to Python service (streaming endpoint)
+	pythonURL := fmt.Sprintf("http://%s:%d/chat/stream",
+		h.config.Python.Host, h.config.Python.Port)
+
+	requestBody := map[string]interface{}{
+		"message":         req.Message,
+		"message_history": messageHistory,
+		"metadata":        req.Metadata,
+		"stream":          true, // 明确标记为流式请求
+	}
+
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		h.logger.Error("Failed to marshal request", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to prepare request"})
+		return
+	}
+
+	// Create HTTP request
+	httpReq, err := http.NewRequestWithContext(
+		c.Request.Context(),
+		"POST",
+		pythonURL,
+		bytes.NewBuffer(jsonData),
+	)
+	if err != nil {
+		h.logger.Error("Failed to create HTTP request", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create request"})
+		return
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "text/plain") // 流式响应
+
+	// Call Python service with streaming
+	resp, err := h.callPythonWithRetry(httpReq, pythonURL, req.SessionID)
+	if err != nil {
+		h.logger.Error("Failed to call Python service after retries", zap.Error(err),
+			zap.String("url", pythonURL), zap.String("session_id", req.SessionID))
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Agent service unavailable"})
+		return
+	}
+	defer resp.Body.Close()
+
+	// Handle different status codes
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		h.logger.Error("Python service error",
+			zap.Int("status_code", resp.StatusCode),
+			zap.String("response", string(body)))
+		c.JSON(resp.StatusCode, gin.H{"error": "Agent service error"})
+		return
+	}
+
+	// Set SSE headers
+	c.Header("Content-Type", "text/plain")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("Access-Control-Allow-Origin", "*")
+	c.Header("Access-Control-Allow-Headers", "Cache-Control")
+
+	// Stream response to client
+	// Python service already returns SSE formatted data, just forward it
+	buf := make([]byte, 4096)
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			// Forward the raw SSE data from Python service
+			c.Writer.Write(buf[:n])
+			c.Writer.Flush()
+		}
+		if err != nil {
+			if err != io.EOF {
+				h.logger.Error("Error reading stream", zap.Error(err))
+			}
+			break
+		}
+	}
+
+	// Add assistant message to session after streaming completes
+	if h.sessionManager != nil {
+		// Note: In a real implementation, you might want to collect the full response
+		// and store it. For now, we'll store a placeholder.
+		err = h.sessionManager.AddMessage(req.SessionID, "assistant", "[Streaming response completed]", nil)
+		if err != nil {
+			h.logger.Error("Failed to add assistant message to session", zap.Error(err),
+				zap.String("session_id", req.SessionID))
+		}
+	}
+
+	h.logger.Info("Chat stream completed",
+		zap.String("session_id", req.SessionID),
+		zap.String("user_message", req.Message[:min(50, len(req.Message))]))
+}

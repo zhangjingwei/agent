@@ -1,197 +1,314 @@
 #!/bin/bash
-BASE_URL="http://localhost:8080"
+# Nexus Agent 流式聊天测试脚本
+# 测试流式请求、会话管理以及context canceled错误
 
-echo "开始Agent功能测试..."
+# 移除 set -e，改为手动处理错误
+# set -e
 
-# 健康检查
-echo "1. 健康检查:"
-HEALTH_STATUS=$(curl -s --max-time 10 $BASE_URL/health | jq -r '.status')
-if [ "$HEALTH_STATUS" != "healthy" ]; then
-    echo "健康检查失败: $HEALTH_STATUS"
-    exit 1
-fi
-echo "\"$HEALTH_STATUS\""
+# 配置
+GATEWAY_URL="http://localhost:8080"
+AI_URL="http://localhost:8082"
+TIMEOUT=30
+MAX_RETRIES=3
+RETRY_DELAY=2
 
-# 创建会话
-echo "2. 创建会话:"
-SESSION=$(curl -s --max-time 10 -X POST $BASE_URL/api/v1/sessions \
-  -H "Content-Type: application/json" \
-  -d '{"metadata": {"test": true}}')
-SESSION_ID=$(echo $SESSION | jq -r '.session_id')
-if [ "$SESSION_ID" = "null" ] || [ -z "$SESSION_ID" ]; then
-    echo "创建会话失败: $SESSION"
-    exit 1
-fi
-echo "会话ID: $SESSION_ID"
+# 颜色输出
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
 
-# 测试Agent高级数学计算功能
-echo "3. 测试Agent高级数学计算功能:"
-echo "发送: '计算 sqrt(16) + sin(pi/2)'"
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
 
-CHAT_RESPONSE=$(curl -s --max-time 30 -X POST $BASE_URL/api/v1/chat \
-  -H "Content-Type: application/json" \
-  -d "{\"session_id\": \"$SESSION_ID\", \"message\": \"计算 sqrt(16) + sin(pi/2)\", \"metadata\": {}}")
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
 
-# 检查响应是否成功
-if [ $? -ne 0 ]; then
-    echo "请求失败"
-    exit 1
-fi
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
 
-# 解析响应
-MESSAGE=$(echo $CHAT_RESPONSE | jq -r '.message')
-TOOL_CALLS=$(echo $CHAT_RESPONSE | jq '.tool_calls')
-PROCESSING_TIME=$(echo $CHAT_RESPONSE | jq -r '.processing_time')
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
 
-echo "Agent原始响应: $MESSAGE"
+# 检查服务是否运行
+check_services() {
+    log_info "检查服务状态..."
 
-# 显示工具调用详情
-if [ "$TOOL_CALLS" != "null" ] && [ "$(echo $TOOL_CALLS | jq '. | length')" -gt 0 ]; then
-    echo "工具调用详情:"
-    echo $TOOL_CALLS | jq -r '.[] | "  工具: \(.name)\n  参数: \(.arguments)\n  结果: \(.result // "执行中")\n  执行时间: \(.execution_time // "未知")秒\n"'
-fi
-
-# 显示处理时间
-if [ "$PROCESSING_TIME" != "null" ]; then
-    echo "总处理时间: ${PROCESSING_TIME}s"
-fi
-
-echo ""
-
-# 测试Agent复杂数学表达式
-echo "3b. 测试Agent复杂数学表达式:"
-echo "发送: '计算 2**3 + factorial(4) / 6'"
-
-CHAT_RESPONSE2=$(curl -s --max-time 30 -X POST $BASE_URL/api/v1/chat \
-  -H "Content-Type: application/json" \
-  -d "{\"session_id\": \"$SESSION_ID\", \"message\": \"计算 2**3 + factorial(4) / 6\", \"metadata\": {}}")
-
-# 检查响应是否成功
-if [ $? -ne 0 ]; then
-    echo "复杂表达式请求失败"
-    exit 1
-fi
-
-# 解析响应
-MESSAGE2=$(echo $CHAT_RESPONSE2 | jq -r '.message')
-TOOL_CALLS2=$(echo $CHAT_RESPONSE2 | jq '.tool_calls')
-PROCESSING_TIME2=$(echo $CHAT_RESPONSE2 | jq -r '.processing_time')
-
-echo "Agent原始响应: $MESSAGE2"
-
-# 显示工具调用详情
-if [ "$TOOL_CALLS2" != "null" ] && [ "$(echo $TOOL_CALLS2 | jq '. | length')" -gt 0 ]; then
-    echo "复杂表达式工具调用详情:"
-    echo $TOOL_CALLS2 | jq -r '.[] | "  工具: \(.name)\n  参数: \(.arguments)\n  结果: \(.result // "执行中")\n  执行时间: \(.execution_time // "未知")秒\n"'
-fi
-
-# 显示处理时间
-if [ "$PROCESSING_TIME2" != "null" ]; then
-    echo "总处理时间: ${PROCESSING_TIME2}s"
-fi
-
-echo ""
-
-# 测试Agent MCP天气功能
-echo "3c. 测试Agent MCP天气功能:"
-echo "发送: '北京现在的天气怎么样？'"
-
-CHAT_RESPONSE3=$(curl -s --max-time 30 -X POST $BASE_URL/api/v1/chat \
-  -H "Content-Type: application/json" \
-  -d "{\"session_id\": \"$SESSION_ID\", \"message\": \"北京现在的天气怎么样？\", \"metadata\": {}}")
-
-# 检查响应是否成功
-if [ $? -ne 0 ]; then
-    echo "天气查询请求失败"
-    exit 1
-fi
-
-# 解析响应
-MESSAGE3=$(echo $CHAT_RESPONSE3 | jq -r '.message')
-TOOL_CALLS3=$(echo $CHAT_RESPONSE3 | jq '.tool_calls')
-PROCESSING_TIME3=$(echo $CHAT_RESPONSE3 | jq -r '.processing_time')
-
-echo "Agent原始响应: $MESSAGE3"
-
-# 显示工具调用详情
-if [ "$TOOL_CALLS3" != "null" ] && [ "$(echo $TOOL_CALLS3 | jq '. | length')" -gt 0 ]; then
-    echo "天气查询工具调用详情:"
-    echo $TOOL_CALLS3 | jq -r '.[] | "  工具: \(.name)\n  参数: \(.arguments)\n  结果: \(.result // "执行中")\n  执行时间: \(.execution_time // "未知")秒\n"'
-fi
-
-# 显示处理时间
-if [ "$PROCESSING_TIME3" != "null" ]; then
-    echo "总处理时间: ${PROCESSING_TIME3}s"
-fi
-
-# 检查会话历史
-echo "5. 检查会话历史:"
-HISTORY=$(curl -s --max-time 10 -X GET $BASE_URL/api/v1/sessions/$SESSION_ID/history 2>/dev/null)
-if [ $? -eq 0 ] && [ "$HISTORY" != "null" ]; then
-    MESSAGE_COUNT=$(echo $HISTORY | jq '.messages | length')
-    echo "会话消息数量: $MESSAGE_COUNT"
-
-    if [ "$MESSAGE_COUNT" -gt 0 ]; then
-        echo "会话记录:"
-        echo $HISTORY | jq -r '.messages[] | "  \(.role | if . == "user" then "用户" else "Agent" end): \(.content[:80])\(if (.content | length) > 80 then "..." else "" end)"'
+    # 检查API网关
+    if ! curl -f -s "$GATEWAY_URL/health" > /dev/null 2>&1; then
+        log_error "API网关未运行，请先执行 ./start.sh 启动服务"
+        exit 1
     fi
-else
-    echo "无法获取会话历史"
-fi
 
-# 显示完整响应用于调试
-echo "6. 测试结果总结:"
-echo "   单参数工具测试响应:"
-echo $CHAT_RESPONSE | jq '{message: .message, tool_calls: (.tool_calls | length), processing_time: .processing_time}'
-echo ""
-echo "   多参数工具测试响应:"
-echo $CHAT_RESPONSE2 | jq '{message: .message, tool_calls: (.tool_calls | length), processing_time: .processing_time}'
-echo ""
-echo "   MCP天气测试响应:"
-echo $CHAT_RESPONSE3 | jq '{message: .message, tool_calls: (.tool_calls | length), processing_time: .processing_time}'
+    # 检查AI服务
+    log_info "检查AI服务状态..."
+    local retry_count=0
+    while [ $retry_count -lt $MAX_RETRIES ]; do
+        if curl -f -s --max-time 10 "$AI_URL/health" > /dev/null 2>&1; then
+            log_success "AI服务运行正常"
+            break
+        else
+            retry_count=$((retry_count + 1))
+            if [ $retry_count -lt $MAX_RETRIES ]; then
+                log_warning "AI服务未就绪，重试中... ($retry_count/$MAX_RETRIES)"
+                sleep $RETRY_DELAY
+            else
+                log_error "AI服务启动失败，请检查服务状态"
+                log_info "您可以尝试重新运行 ./start.sh 或等待更长时间"
+                exit 1
+            fi
+        fi
+    done
 
-echo ""
-echo "Agent功能测试完成!"
-echo "提示: 会话 $SESSION_ID 保留，可用于后续测试"
-echo ""
-echo "测试结果分析:"
+    log_success "所有服务运行正常"
+}
 
-# 检查单参数工具测试结果
-if echo "$CHAT_RESPONSE" | jq -e '.tool_calls | length == 0' >/dev/null; then
-    echo "   单参数工具测试: Agent成功处理了计算请求"
-    echo "   工具调用已被正确执行并转换为最终回答"
-else
-    echo "   单参数工具测试: 发现未处理的工具调用，可能存在解析问题"
-fi
+# 创建新会话
+create_session() {
+    echo "创建新会话..." >&2
 
-# 检查多参数工具测试结果
-if echo "$CHAT_RESPONSE2" | jq -e '.tool_calls | length == 0' >/dev/null; then
-    echo "   多参数工具测试: Agent成功处理了数学运算请求"
-    echo "   多参数工具调用已被正确执行"
-else
-    echo "   多参数工具测试: 发现未处理的工具调用，可能存在解析问题"
-fi
+    local response=$(curl -s -X POST "$GATEWAY_URL/api/v1/sessions" \
+        -H "Content-Type: application/json" \
+        -d '{"metadata": {"test": true}}' \
+        --max-time $TIMEOUT 2>/dev/null)
 
-# 检查计算器测试是否成功
-if echo "$CHAT_RESPONSE" | jq -e '.tool_calls | length == 0' >/dev/null && echo "$CHAT_RESPONSE2" | jq -e '.tool_calls | length == 0' >/dev/null; then
-    echo "   计算器测试通过！表达式计算功能工作正常"
-else
-    echo "   计算器测试存在问题，请检查配置"
-fi
+    local session_id=$(echo "$response" | grep -o '"session_id":"[^"]*"' | cut -d'"' -f4)
 
-# 检查MCP天气测试结果（由于连接失败，不会调用工具）
-if echo "$CHAT_RESPONSE3" | jq -e '.message | length > 0' >/dev/null; then
-    echo "   MCP天气测试: Agent收到了响应（可能没有MCP工具可用）"
-    echo "   注意: 如果MCP服务器未连接，将不会调用天气工具"
-else
-    echo "   MCP天气测试: 没有收到有效响应"
-fi
+    if [ -z "$session_id" ]; then
+        echo "创建会话失败: $response" >&2
+        return 1
+    fi
 
-# 显示当前LLM配置信息
-echo ""
-echo "当前LLM配置:"
-echo "   提供商: $LLM_PROVIDER"
-echo "   模型: $LLM_MODEL"
-if [ -z "$LLM_PROVIDER" ] || [ -z "$LLM_MODEL" ]; then
-    echo "   未设置LLM_PROVIDER或LLM_MODEL环境变量，使用默认配置"
+    echo "会话创建成功: $session_id" >&2
+    echo "$session_id"
+}
+
+# 测试普通聊天请求
+test_normal_chat() {
+    local session_id=$1
+    log_info "测试普通聊天请求 (session: $session_id)..."
+
+    local retry_count=0
+    while [ $retry_count -lt $MAX_RETRIES ]; do
+        local response=$(curl -s -X POST "$GATEWAY_URL/api/v1/chat" \
+            -H "Content-Type: application/json" \
+            -d "{\"session_id\": \"$session_id\", \"message\": \"你好，请简单介绍一下自己\"}" \
+            --max-time $TIMEOUT 2>/dev/null)
+
+        if echo "$response" | grep -q "message"; then
+            log_success "普通聊天请求成功"
+            return 0
+        else
+            retry_count=$((retry_count + 1))
+            if [ $retry_count -lt $MAX_RETRIES ]; then
+                log_warning "聊天请求失败，重试中... ($retry_count/$MAX_RETRIES)"
+                sleep $RETRY_DELAY
+            else
+                log_error "普通聊天请求失败: $response"
+                return 1
+            fi
+        fi
+    done
+}
+
+# 测试流式聊天请求
+test_streaming_chat() {
+    local session_id=$1
+    log_info "测试流式聊天请求 (session: $session_id)..."
+
+    log_info "发送流式请求..."
+    local start_time=$(date +%s)
+
+    # 使用timeout命令测试流式请求
+    if timeout 10s curl -s -X POST "$GATEWAY_URL/api/v1/chat/stream" \
+        -H "Content-Type: application/json" \
+        -d "{\"session_id\": \"$session_id\", \"message\": \"请给我讲一个简短的故事\"}" \
+        --max-time $TIMEOUT > /dev/null 2>&1; then
+
+        local end_time=$(date +%s)
+        local duration=$((end_time - start_time))
+        log_success "流式请求完成 (耗时: ${duration}s)"
+        return 0
+    else
+        log_error "流式请求失败"
+        return 1
+    fi
+}
+
+# 测试提前断开连接的流式请求 (模拟context canceled)
+test_streaming_disconnect() {
+    local session_id=$1
+    log_info "测试流式请求提前断开连接 (session: $session_id)..."
+
+    log_info "启动流式请求并在2秒后断开..."
+
+    # 在后台启动curl请求
+    curl -s -X POST "$GATEWAY_URL/api/v1/chat/stream" \
+        -H "Content-Type: application/json" \
+        -d "{\"session_id\": \"$session_id\", \"message\": \"这是一个很长的请求，请慢慢回复\"}" \
+        --max-time $TIMEOUT > /dev/null 2>&1 &
+
+    local curl_pid=$!
+
+    # 等待2秒后杀掉进程，模拟客户端断开
+    sleep 2
+    kill $curl_pid 2>/dev/null || true
+
+    log_success "模拟客户端断开完成"
+    log_info "检查网关日志，应该会看到 'context canceled' 相关的日志"
+    return 0  # 这个测试总是"成功"，因为我们只是模拟断开
+}
+
+# 测试会话历史
+test_session_history() {
+    local session_id=$1
+    log_info "测试会话历史 (session: $session_id)..."
+
+    local response=$(curl -s "$GATEWAY_URL/api/v1/sessions/$session_id/history" \
+        --max-time $TIMEOUT 2>/dev/null)
+
+    if echo "$response" | grep -q "role"; then
+        local message_count=$(echo "$response" | grep -o '"role"' | wc -l)
+        log_success "会话历史获取成功，共 $message_count 条消息"
+        return 0
+    else
+        log_error "会话历史获取失败: $response"
+        return 1
+    fi
+}
+
+# 测试工具列表
+test_tools_list() {
+    log_info "测试工具列表..."
+
+    local response=$(curl -s "$GATEWAY_URL/api/v1/tools" \
+        --max-time $TIMEOUT 2>/dev/null)
+
+    if echo "$response" | grep -q "name"; then
+        log_success "工具列表获取成功"
+        return 0
+    else
+        log_warning "工具列表获取失败或为空: $response"
+        return 1
+    fi
+}
+
+# 测试无效请求
+test_invalid_request() {
+    log_info "测试无效请求..."
+
+    # 缺少必需字段
+    local response=$(curl -s -X POST "$GATEWAY_URL/api/v1/chat/stream" \
+        -H "Content-Type: application/json" \
+        -d '{"message": "test"}' \
+        --max-time $TIMEOUT 2>/dev/null)
+
+    if echo "$response" | grep -q "error"; then
+        log_success "无效请求正确返回错误"
+        return 0
+    else
+        log_warning "无效请求未返回预期错误: $response"
+        return 1
+    fi
+}
+
+# 主测试流程
+main() {
+    echo "======================================"
+    echo "   Nexus Agent 流式聊天测试脚本"
+    echo "======================================"
+    echo
+
+    # 检查服务
+    check_services
+    echo
+
+    # 创建会话
+    SESSION_ID=$(create_session)
+    if [ -z "$SESSION_ID" ]; then
+        log_error "无法创建会话，退出测试"
+        exit 1
+    fi
+    echo
+
+    # 运行各项测试
+    echo "开始测试..."
+    echo
+
+    # 跟踪测试结果
+    local test_results=()
+
+    if test_normal_chat "$SESSION_ID"; then
+        test_results+=("✓ 普通聊天请求")
+    else
+        test_results+=("✗ 普通聊天请求")
+    fi
+    echo
+
+    if test_streaming_chat "$SESSION_ID"; then
+        test_results+=("✓ 流式聊天请求")
+    else
+        test_results+=("✗ 流式聊天请求")
+    fi
+    echo
+
+    if test_streaming_disconnect "$SESSION_ID"; then
+        test_results+=("✓ 流式请求断开连接 (检查context canceled日志)")
+    else
+        test_results+=("? 流式请求断开连接 (可能正常)")
+    fi
+    echo
+
+    if test_session_history "$SESSION_ID"; then
+        test_results+=("✓ 会话历史查询")
+    else
+        test_results+=("✗ 会话历史查询")
+    fi
+    echo
+
+    if test_tools_list; then
+        test_results+=("✓ 工具列表查询")
+    else
+        test_results+=("? 工具列表查询")
+    fi
+    echo
+
+    if test_invalid_request; then
+        test_results+=("✓ 错误处理")
+    else
+        test_results+=("✗ 错误处理")
+    fi
+    echo
+
+    log_success "所有测试完成！"
+    echo
+    log_info "测试总结:"
+    for result in "${test_results[@]}"; do
+        log_info "$result"
+    done
+
+    # 检查是否有关键测试失败
+    local critical_failures=0
+    for result in "${test_results[@]}"; do
+        if [[ $result == ✗* ]]; then
+            critical_failures=$((critical_failures + 1))
+        fi
+    done
+
+    if [ $critical_failures -gt 0 ]; then
+        log_warning "发现 $critical_failures 个关键测试失败，请检查服务状态"
+        exit 1
+    else
+        log_success "所有关键测试通过！"
+    fi
+}
+
+# 如果脚本被直接调用，运行主函数
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
 fi

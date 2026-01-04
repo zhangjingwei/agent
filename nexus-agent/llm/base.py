@@ -3,8 +3,9 @@ LLM基础接口
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, AsyncIterator
 from langchain_core.runnables import Runnable
+from langchain_core.messages import BaseMessage
 
 
 class LLMProvider(ABC):
@@ -23,6 +24,16 @@ class LLMProvider(ABC):
     @abstractmethod
     def get_provider_name(self) -> str:
         """获取提供商名称"""
+        pass
+
+    @abstractmethod
+    async def stream_chat(self, messages: list[BaseMessage], **kwargs) -> AsyncIterator[Dict[str, Any]]:
+        """流式对话接口"""
+        pass
+
+    @abstractmethod
+    async def stream_chat_with_tools(self, messages: list[BaseMessage], tools: list, **kwargs) -> AsyncIterator[Dict[str, Any]]:
+        """带工具的流式对话接口"""
         pass
 
     def validate_config(self) -> bool:

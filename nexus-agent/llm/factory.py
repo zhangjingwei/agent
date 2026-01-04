@@ -34,6 +34,20 @@ class LLMFactory:
         return llm_provider.create_llm()
 
     @classmethod
+    def create_streaming_llm(cls, provider: str, api_key: str, model: str, **config) -> LLMProvider:
+        """创建支持流式的LLM提供商实例"""
+        if provider not in cls._providers:
+            raise ValueError(f"Unsupported LLM provider: {provider}")
+
+        provider_class = cls._providers[provider]
+        llm_provider = provider_class(api_key=api_key, model=model, **config)
+
+        if not llm_provider.validate_config():
+            raise ValueError(f"Invalid configuration for provider: {provider}")
+
+        return llm_provider
+
+    @classmethod
     def get_supported_providers(cls) -> list[str]:
         """获取支持的提供商列表"""
         return list(cls._providers.keys())

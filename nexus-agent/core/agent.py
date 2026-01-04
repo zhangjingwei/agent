@@ -2,10 +2,10 @@
 统一Agent接口 - 整合所有层
 """
 
-from typing import Optional, Any
+from typing import Optional, Any, AsyncIterator
 
 from orchestration.agent import OrchestratorAgent
-from config.models import AgentConfig, ChatRequest, ChatResponse
+from config.models import AgentConfig, ChatRequest, ChatResponse, StreamChunk
 
 
 class UniversalAgent:
@@ -26,6 +26,11 @@ class UniversalAgent:
         # 执行对话（传递消息历史）
         response = await self.orchestrator.chat_with_history(request)
         return response
+
+    async def chat_with_history_stream(self, request: ChatRequest) -> AsyncIterator[StreamChunk]:
+        """流式对话接口"""
+        async for chunk in self.orchestrator.chat_with_history_stream(request):
+            yield chunk
 
     async def cleanup(self):
         """清理资源"""
