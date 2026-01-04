@@ -1,0 +1,2 @@
+[console_scripts]
+start = scripts.start:main
