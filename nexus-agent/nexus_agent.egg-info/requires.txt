@@ -11,6 +11,7 @@ langchain-openai==0.1.25
 langchain-anthropic==0.1.23
 langgraph==0.2.58
 langgraph-checkpoint-sqlite==2.0.1
+mcp>=0.1.0
 
 [dev]
 pytest>=7.4.0
