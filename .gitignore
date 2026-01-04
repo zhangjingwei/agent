@@ -201,3 +201,41 @@ yarn-error.log*
 secrets/
 *.key
 *.pem
+
+# Project specific ignores
+# Nexus Agent Python virtual environment and build artifacts
+nexus-agent/venv/
+nexus-agent/nexus_agent.egg-info/
+nexus-agent/=*
+
+# Nexus Gateway Go build artifacts
+nexus-gateway/build/
+nexus-gateway/bin/
+
+# Environment files (keep .env.example)
+.env
+.env.local
+.env.*.local
+
+# Temporary files created during development
+*.tmp
+*.bak
+.cache/
+.tmp/
+
+# IDE specific
+.vscode/settings.json
+.idea/workspace.xml
+*.sublime-workspace
+*.sublime-project
+
+# OS specific cache files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Log files (additional patterns)
+*.log.*
+access.log
+error.log
+debug.log

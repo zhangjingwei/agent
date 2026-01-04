@@ -48,6 +48,73 @@ make run
 - **Prometheus**: http://localhost:9090 (可选)
 - **Grafana**: http://localhost:3000 (可选)
 
+## 📦 安装
+
+### 系统要求
+
+- **Python**: 3.8+
+- **Go**: 1.19+
+- **Git**: 2.x+
+- **操作系统**: Linux/macOS/Windows (WSL)
+
+### 自动安装（推荐）
+
+```bash
+# 克隆项目（如果还没有的话）
+git clone <repository-url>
+cd nexus-agent
+
+# 运行自动安装脚本
+./install.sh
+```
+
+安装脚本将自动：
+- ✅ 检查系统依赖
+- ✅ 创建Python虚拟环境
+- ✅ 安装Python依赖包
+- ✅ 安装Go依赖包
+- ✅ 构建Go项目
+- ✅ 创建环境配置文件
+- ✅ 设置脚本权限
+
+### 手动安装
+
+如果需要手动安装或遇到问题，可以按以下步骤操作：
+
+#### 1. 安装Python依赖
+```bash
+# 创建虚拟环境
+python3 -m venv venv
+
+# 激活虚拟环境
+source venv/bin/activate
+
+# 安装依赖
+pip install -r nexus-agent/requirements.txt
+```
+
+#### 2. 安装Go依赖
+```bash
+cd nexus-gateway
+
+# 下载依赖
+go mod tidy
+go mod download
+
+# 构建项目
+make build
+```
+
+#### 3. 配置环境变量
+```bash
+# 复制环境配置模板
+cp nexus-gateway/env.example nexus-gateway/.env
+
+# 编辑配置文件
+nano nexus-agent/.env     # 配置API密钥
+nano nexus-gateway/.env   # 调整Go服务配置
+```
+
 ## 🔧 环境配置
 
 ### 必需环境变量

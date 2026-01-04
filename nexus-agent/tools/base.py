@@ -23,7 +23,7 @@ class Tool(ABC):
 
     def to_langchain_tool(self):
         """转换为LangChain工具"""
-        from langchain_core.pydantic_v1 import create_model, Field
+        from pydantic import create_model, Field
 
         # 获取参数schema
         schema = self.get_parameters_schema()
