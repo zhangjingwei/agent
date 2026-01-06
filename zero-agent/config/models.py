@@ -37,6 +37,7 @@ class ChatRequest(BaseModel):
     """对话请求"""
     message: str
     stream: bool = False
+    session_id: str  # 会话ID，由网关传入，必需字段
     metadata: Optional[Dict[str, Any]] = None
     message_history: Optional[List[Dict[str, Any]]] = None
 
@@ -68,6 +69,93 @@ class ChatResponse(BaseModel):
     usage: Optional[Dict[str, Any]] = None
     processing_time: Optional[float] = None
 
+    def to_dict(self, format: str = "openai") -> Dict[str, Any]:
+        """转换为字典，用于API响应
+        
+        Args:
+            format: 响应格式，默认使用 "openai"
+        
+        确保所有字段都有默认值，避免返回null
+        """
+        return self.to_openai_format()
+    
+    def to_openai_format(self) -> Dict[str, Any]:
+        """OpenAI 兼容格式
+        
+        注意：OpenAI的function_call格式是单个对象，不是数组
+        如果有多个工具调用，需要返回多个choices，每个choice包含一个function_call
+        """
+        import uuid
+        import json
+        from datetime import datetime
+        
+        choices = []
+        
+        # 如果有工具调用，使用 function_call 格式
+        if self.tool_calls:
+            # OpenAI格式：每个工具调用作为一个独立的choice
+            # 但通常只返回第一个工具调用作为function_call
+            # 或者返回所有工具调用作为tool_calls数组（新格式）
+            if len(self.tool_calls) == 1:
+                # 单个工具调用，使用function_call格式（OpenAI旧格式）
+                call = self.tool_calls[0]
+                choices.append({
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": self.message,
+                        "function_call": {
+                            "name": call.name,
+                            "arguments": json.dumps(call.arguments, ensure_ascii=False)
+                        }
+                    },
+                    "finish_reason": "function_call"
+                })
+            else:
+                # 多个工具调用，使用tool_calls格式（OpenAI新格式，支持并行调用）
+                choices.append({
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": self.message,
+                        "tool_calls": [
+                            {
+                                "id": call.id,
+                                "type": "function",
+                                "function": {
+                                    "name": call.name,
+                                    "arguments": json.dumps(call.arguments, ensure_ascii=False)
+                                }
+                            }
+                            for call in self.tool_calls
+                        ]
+                    },
+                    "finish_reason": "tool_calls"
+                })
+        else:
+            # 没有工具调用，普通文本响应
+            choices.append({
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": self.message
+                },
+                "finish_reason": "stop"
+            })
+        
+        return {
+            "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
+            "object": "chat.completion",
+            "created": int(datetime.now().timestamp()),
+            "model": "gpt-4",  # 可以从配置中获取
+            "choices": choices,
+            "usage": self.usage if self.usage else {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0
+            }
+        }
+
 
 class Session(BaseModel):
     """会话"""
@@ -94,7 +182,7 @@ class MCPConfig(BaseModel):
     id: str
     name: str
     description: str
-    command: str  # 启动命令，如 "uvx" 或 "python"
+    command: str  # 启动命令，如 "uvx" 或 "node"
     args: List[str] = Field(default_factory=list)  # 命令参数
     env: Dict[str, str] = Field(default_factory=dict)  # 环境变量
     enabled: bool = True
@@ -131,3 +219,5 @@ class AgentConfig(BaseModel):
     function_call: Dict[str, Any] = Field(default_factory=dict)
     llm_config: Dict[str, Any] = Field(default_factory=dict)
     filters: List[FilterConfig] = Field(default_factory=list)  # 过滤器配置
+    timeouts: Dict[str, int] = Field(default_factory=dict)  # 超时配置（秒）
+    concurrency: Dict[str, int] = Field(default_factory=dict)  # 并发控制配置

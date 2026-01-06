@@ -57,6 +57,10 @@ func (sm *SessionManager) GetHistory(sessionID string, limit *int) ([]*Message, 
 	return messages, nil
 }
 
+func (sm *SessionManager) GetSession(sessionID string) (*Session, error) {
+	return sm.store.GetSession(sessionID)
+}
+
 func (sm *SessionManager) DeleteSession(sessionID string) error {
 	// For Redis, we can delete the key directly
 	// In a more complex setup, we might want to archive the session first

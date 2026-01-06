@@ -2,6 +2,6 @@
 核心整合层 - 统一接口
 """
 
-from .agent import UniversalAgent
+from .agent import ZeroAgentEngine
 
-__all__ = ['UniversalAgent']
+__all__ = ['ZeroAgentEngine']

@@ -21,7 +21,7 @@ class SDKConfig:
         self.timeout = timeout
 
 
-class UniversalAgentSDK:
+class ZeroAgentEngineSDK:
     """
     Universal Agent Python SDK
 
@@ -233,7 +233,7 @@ def create_sdk(
     api_url: str,
     api_key: Optional[str] = None,
     timeout: int = 30
-) -> UniversalAgentSDK:
+) -> ZeroAgentEngineSDK:
     """
     创建SDK实例的便捷函数
 
@@ -246,7 +246,7 @@ def create_sdk(
         SDK实例
     """
     config = SDKConfig(api_url, api_key, timeout)
-    return UniversalAgentSDK(config)
+    return ZeroAgentEngineSDK(config)
 
 
 # 使用示例

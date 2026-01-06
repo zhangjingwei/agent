@@ -1,11 +1,21 @@
 package api
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 )
 
 // SetupRoutes 设置API路由
 func SetupRoutes(r *gin.Engine, handler *Handler) {
+
+	// 健康检查端点
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"status": "ok",
+		})
+	})
+
 	apiV1 := r.Group("/api/v1")
 	{
 		// Chat endpoint (unified for both streaming and non-streaming)

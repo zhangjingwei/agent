@@ -8,7 +8,7 @@ from orchestration.agent import OrchestratorAgent
 from config.models import AgentConfig, ChatRequest, ChatResponse, StreamChunk
 
 
-class UniversalAgent:
+class ZeroAgentEngine:
     """通用Agent接口（无状态推理引擎）"""
 
     def __init__(self, config: AgentConfig):

@@ -25,6 +25,7 @@ class MCPTool(Tool):
         description = tool_info.get('description', '')
 
         super().__init__(tool_name, description)
+        self.tool_type = "mcp"  # MCP 工具类型
 
     async def _get_client(self) -> MCPClient:
         """获取或创建客户端"""

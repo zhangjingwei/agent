@@ -15,6 +15,7 @@ class Tool(ABC):
     def __init__(self, name: str, description: str):
         self.name = name
         self.description = description
+        self.tool_type = "builtin"  # 默认类型为内置工具
 
     @abstractmethod
     async def execute(self, **kwargs) -> Any:

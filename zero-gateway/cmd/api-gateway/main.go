@@ -74,15 +74,6 @@ func main() {
 	// 设置路由
 	api.SetupRoutes(r, apiHandler)
 
-	// 健康检查端点
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"status":    "healthy",
-			"service":   "api-gateway",
-			"timestamp": time.Now().Unix(),
-		})
-	})
-
 	// Filter metrics endpoint
 	// r.GET("/api/v1/filters/metrics", filterManager.HealthCheckHandler())
 

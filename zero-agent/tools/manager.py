@@ -184,11 +184,21 @@ class ToolManager:
 
     async def cleanup_mcp_clients(self):
         """清理MCP客户端连接"""
-        for client in self._mcp_clients.values():
+        errors = []
+        client_ids = list(self._mcp_clients.keys())
+        
+        for client_id, client in list(self._mcp_clients.items()):
             try:
                 await client.disconnect()
+                logger.debug(f"MCP客户端 {client_id} 清理成功")
             except Exception as e:
-                logger.warning(f"清理MCP客户端失败: {str(e)}")
+                error_msg = f"清理MCP客户端 {client_id} 失败: {str(e)}"
+                logger.warning(error_msg, exc_info=True)
+                errors.append(error_msg)
 
         self._mcp_clients.clear()
-        logger.info("已清理所有MCP客户端连接")
+        
+        if errors:
+            logger.warning(f"MCP客户端清理完成，但有 {len(errors)}/{len(client_ids)} 个错误")
+        else:
+            logger.info(f"已清理所有MCP客户端连接（共 {len(client_ids)} 个）")

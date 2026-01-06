@@ -2,6 +2,6 @@
 Universal Agent Python SDK
 """
 
-from .sdk import UniversalAgentSDK
+from .sdk import ZeroAgentEngineSDK
 
-__all__ = ['UniversalAgentSDK']
+__all__ = ['ZeroAgentEngineSDK']

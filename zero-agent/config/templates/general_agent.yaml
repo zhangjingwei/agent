@@ -1,0 +1,80 @@
+# 通用 Agent 配置示例
+# 包含常用工具的基础 Agent
+
+id: general-agent
+name: 通用助手
+description: 提供通用功能的智能助手，包含计算器等常用工具
+
+# LLM 配置
+llm_config:
+  provider: ${LLM_PROVIDER:openai}
+  api_key: ${OPENAI_API_KEY}
+  model: ${LLM_MODEL:gpt-4}
+  temperature: 0.7
+
+# 内置工具配置
+tools:
+  - id: calculator
+    name: calculator
+    description: 高级数学计算器，支持丰富的数学运算和函数
+    parameters:
+      type: object
+      properties:
+        expression:
+          type: string
+          description: 数学表达式，支持：基本运算(+-*/), 幂运算(**), 函数(sqrt, sin, cos, tan, log, ln, exp, abs, factorial), 常量(pi, e)
+      required:
+        - expression
+    handler:
+      type: function
+      module: tools.builtin.calculator
+      function: calculate
+      timeout: 5000
+    enabled: true
+
+# MCP 服务器配置
+mcp_servers: []
+
+# MCP 工具配置
+mcp_tools: []
+
+# Function Call 配置
+function_call:
+  strategy: auto
+  max_iterations: 5
+  timeout: 10000
+
+# 过滤器配置
+filters:
+  - enabled: true
+    name: audit
+    type: audit
+    priority: 10
+    config:
+      enable_request_logging: true
+      enable_response_logging: true
+      log_sensitive_data: false
+      log_level: info
+  
+  - enabled: true
+    name: input_validation
+    type: input_validation
+    priority: 100
+    config:
+      max_message_length: 10000
+      max_metadata_size: 1024
+      blocked_words: []
+      required_fields: []
+      allowed_content_types:
+        - application/json
+  
+  - enabled: true
+    name: output_processing
+    type: output_processing
+    priority: 200
+    config:
+      sanitize_output: true
+      max_response_size: 10485760
+      add_response_headers: true
+      cors_headers: true
+      compression_enabled: false

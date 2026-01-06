@@ -17,107 +17,39 @@ logger = logging.getLogger(__name__)
 # 预导入 MCP 常量，避免异步环境中的动态导入问题
 _MCP_CONSTANTS = {}
 
-def _safe_import_mcp():
+def _load_mcp_protocol_version():
     """
-    安全地导入 MCP 模块，避免各种导入问题
-
-    返回:
-        dict: 包含导入结果的字典
-            - success: bool, 是否成功导入
-            - LATEST_PROTOCOL_VERSION: str or None
-            - error: Exception or None
+    加载 MCP 协议版本
+    
+    Returns:
+        str: MCP 协议版本
+        
+    Raises:
+        ImportError: 如果 mcp 包未安装
     """
-    result = {
-        'success': False,
-        'LATEST_PROTOCOL_VERSION': None,
-        'error': None
-    }
-
-    # 方法1: 直接导入
     try:
         from mcp.types import LATEST_PROTOCOL_VERSION
-        result.update({
-            'success': True,
-            'LATEST_PROTOCOL_VERSION': LATEST_PROTOCOL_VERSION
-        })
-        logger.debug(f"MCP 直接导入成功: {LATEST_PROTOCOL_VERSION}")
-        return result
-    except ImportError:
-        pass  # 继续尝试其他方法
-
-    # 方法2: 使用 importlib
-    try:
-        import importlib
-        mcp_types = importlib.import_module('mcp.types')
-        result.update({
-            'success': True,
-            'LATEST_PROTOCOL_VERSION': getattr(mcp_types, 'LATEST_PROTOCOL_VERSION', None)
-        })
-        if result['LATEST_PROTOCOL_VERSION']:
-            logger.debug(f"MCP importlib 导入成功: {result['LATEST_PROTOCOL_VERSION']}")
-            return result
-    except Exception as e:
-        result['error'] = e
-
-    # 方法3: 使用 __import__
-    try:
-        mcp_types = __import__('mcp.types', fromlist=['LATEST_PROTOCOL_VERSION'])
-        result.update({
-            'success': True,
-            'LATEST_PROTOCOL_VERSION': getattr(mcp_types, 'LATEST_PROTOCOL_VERSION', None)
-        })
-        if result['LATEST_PROTOCOL_VERSION']:
-            logger.debug(f"MCP __import__ 导入成功: {result['LATEST_PROTOCOL_VERSION']}")
-            return result
-    except Exception as e:
-        if not result['error']:
-            result['error'] = e
-
-    # 方法4: 检查已安装版本
-    try:
-        import pkg_resources
-        version = pkg_resources.get_distribution('mcp').version
-        # 根据版本推断协议版本
-        if version.startswith('1.'):
-            result.update({
-                'success': True,
-                'LATEST_PROTOCOL_VERSION': '2025-11-25'  # MCP 1.x 的最新版本
-            })
-            logger.debug(f"MCP 版本推断成功: {result['LATEST_PROTOCOL_VERSION']}")
-            return result
-    except Exception:
-        pass
-
-    # 降级方案：使用已知版本
-    result.update({
-        'success': True,
-        'LATEST_PROTOCOL_VERSION': '2025-11-25'  # 当前最新版本
-    })
-    logger.warning(f"所有 MCP 导入方法都失败，使用降级版本: {result['LATEST_PROTOCOL_VERSION']}")
-    if result['error']:
-        logger.warning(f"导入错误详情: {result['error']}")
-
-    return result
-
-def _load_mcp_constants():
-    """预加载 MCP 相关常量"""
-    global _MCP_CONSTANTS
-    result = _safe_import_mcp()
-
-    if result['success']:
-        _MCP_CONSTANTS['LATEST_PROTOCOL_VERSION'] = result['LATEST_PROTOCOL_VERSION']
-        logger.info(f"MCP 常量加载成功: {result['LATEST_PROTOCOL_VERSION']}")
-    else:
-        # 最后的降级方案
-        _MCP_CONSTANTS['LATEST_PROTOCOL_VERSION'] = '2025-11-25'
-        logger.error("MCP 常量加载完全失败，使用硬编码版本")
-
-# 在模块导入时立即加载常量
-_load_mcp_constants()
+        logger.debug(f"MCP 协议版本: {LATEST_PROTOCOL_VERSION}")
+        return LATEST_PROTOCOL_VERSION
+    except ImportError as e:
+        error_msg = "MCP 包未安装，请运行: pip install mcp"
+        logger.error(error_msg)
+        raise ImportError(error_msg) from e
 
 def get_mcp_protocol_version() -> str:
-    """获取 MCP 协议版本"""
-    return _MCP_CONSTANTS.get('LATEST_PROTOCOL_VERSION', '2025-11-25')
+    """
+    获取 MCP 协议版本
+    
+    Returns:
+        str: MCP 协议版本
+        
+    Raises:
+        ImportError: 如果 mcp 包未安装
+    """
+    if 'LATEST_PROTOCOL_VERSION' not in _MCP_CONSTANTS:
+        _MCP_CONSTANTS['LATEST_PROTOCOL_VERSION'] = _load_mcp_protocol_version()
+        logger.info(f"MCP 协议版本: {_MCP_CONSTANTS['LATEST_PROTOCOL_VERSION']}")
+    return _MCP_CONSTANTS['LATEST_PROTOCOL_VERSION']
 
 
 class MCPClient:
@@ -196,34 +128,82 @@ class MCPClient:
 
         except Exception as e:
             logger.error(f"连接MCP服务器失败 {self.config.id}: {str(e)}")
-            await self.disconnect()
+            # 确保在异常情况下也清理资源
+            try:
+                await self.disconnect()
+            except Exception as cleanup_error:
+                logger.warning(f"清理失败连接时出错 {self.config.id}: {str(cleanup_error)}")
             raise
 
     async def disconnect(self):
         """断开连接（终止进程）"""
+        # 设置停止标志，让读取线程退出
         self._stop_reading = True
 
+        # 取消所有待处理的请求，避免资源泄漏
+        for request_id, future in list(self._pending_requests.items()):
+            if not future.done():
+                try:
+                    future.cancel()
+                    # 设置超时异常，避免 Future 永远等待
+                    if not future.done():
+                        future.set_exception(asyncio.CancelledError(f"连接断开，请求 {request_id} 已取消"))
+                except Exception as e:
+                    logger.warning(f"取消待处理请求失败 {request_id}: {str(e)}")
+        self._pending_requests.clear()
+
+        # 等待读取线程退出
+        if self._read_thread and self._read_thread.is_alive():
+            try:
+                self._read_thread.join(timeout=2)
+                if self._read_thread.is_alive():
+                    logger.warning(f"读取线程未能及时退出 {self.config.id}")
+            except Exception as e:
+                logger.warning(f"等待读取线程退出时出错 {self.config.id}: {str(e)}")
+
+        # 清理进程资源
         if self.process:
             try:
-                # 取消所有待处理的请求
-                for future in self._pending_requests.values():
-                    if not future.done():
-                        future.cancel()
+                # 关闭标准输入，通知进程退出
+                if self.process.stdin:
+                    try:
+                        self.process.stdin.close()
+                    except Exception as e:
+                        logger.debug(f"关闭 stdin 时出错 {self.config.id}: {str(e)}")
 
+                # 终止进程
                 self.process.terminate()
                 try:
                     self.process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     logger.warning(f"MCP服务器进程 {self.config.id} 未能正常终止，强制杀死")
-                    self.process.kill()
-                    self.process.wait()
+                    try:
+                        self.process.kill()
+                        self.process.wait()
+                    except Exception as e:
+                        logger.warning(f"强制杀死进程时出错 {self.config.id}: {str(e)}")
+
+                # 确保所有文件描述符都已关闭
+                if self.process.stdout:
+                    try:
+                        self.process.stdout.close()
+                    except Exception:
+                        pass
+                if self.process.stderr:
+                    try:
+                        self.process.stderr.close()
+                    except Exception:
+                        pass
+
             except Exception as e:
                 logger.warning(f"清理MCP服务器进程时出错 {self.config.id}: {str(e)}")
+            finally:
+                # 确保进程对象被清理
+                self.process = None
 
-        if self._read_thread and self._read_thread.is_alive():
-            self._read_thread.join(timeout=2)
+        # 清理事件循环引用
+        self._loop = None
 
-        self._pending_requests.clear()
         logger.info(f"已断开MCP服务器连接 {self.config.id}")
 
     def _read_output_sync(self):
@@ -231,22 +211,41 @@ class MCPClient:
         if not self.process or not self.process.stdout:
             return
 
-        while not self._stop_reading:
-            try:
-                line = self.process.stdout.readline()
-                if not line:
-                    break
+        try:
+            while not self._stop_reading:
+                try:
+                    line = self.process.stdout.readline()
+                    if not line:
+                        # EOF 或进程已退出
+                        if not self._stop_reading:
+                            logger.warning(f"MCP服务器 {self.config.id} 输出流已关闭")
+                        break
 
-                # 在事件循环中处理响应
-                if self._loop:
-                    asyncio.run_coroutine_threadsafe(
-                        self._handle_response(line.strip()),
-                        self._loop
-                    )
-            except Exception as e:
-                if not self._stop_reading:
-                    logger.error(f"读取MCP输出时出错 {self.config.id}: {str(e)}")
-                break
+                    # 在事件循环中处理响应
+                    if self._loop and not self._loop.is_closed():
+                        try:
+                            asyncio.run_coroutine_threadsafe(
+                                self._handle_response(line.strip()),
+                                self._loop
+                            )
+                        except RuntimeError as e:
+                            # 事件循环可能已关闭
+                            if "Event loop is closed" in str(e) or "Event loop is running" in str(e):
+                                logger.debug(f"事件循环不可用，停止读取 {self.config.id}")
+                                break
+                            raise
+                except (ValueError, OSError) as e:
+                    # 文件描述符已关闭或其他 I/O 错误
+                    if not self._stop_reading:
+                        logger.debug(f"读取MCP输出时出错（可能是正常关闭） {self.config.id}: {str(e)}")
+                    break
+                except Exception as e:
+                    if not self._stop_reading:
+                        logger.error(f"读取MCP输出时出错 {self.config.id}: {str(e)}")
+                    break
+        finally:
+            # 确保线程退出时清理
+            logger.debug(f"读取线程退出 {self.config.id}")
 
     async def _handle_response(self, line: str):
         """处理响应行"""

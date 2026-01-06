@@ -1,0 +1,81 @@
+# 风险控制评测 Agent 配置示例
+# 用于风险评估和控制的智能 Agent
+
+id: risk-control-agent
+name: 风险控制评测助手
+description: 提供风险评估、控制和评测服务的智能助手，支持多种风险分析工具
+
+# LLM 配置
+llm_config:
+  provider: ${LLM_PROVIDER:openai}
+  api_key: ${OPENAI_API_KEY}
+  model: ${LLM_MODEL:gpt-4}
+  temperature: 0.3  # 风险控制需要更低的温度，确保输出稳定
+
+# 内置工具配置
+tools:
+  - id: calculator
+    name: calculator
+    description: 高级数学计算器，用于风险计算和统计分析
+    parameters:
+      type: object
+      properties:
+        expression:
+          type: string
+          description: 数学表达式，支持：基本运算(+-*/), 幂运算(**), 函数(sqrt, sin, cos, tan, log, ln, exp, abs, factorial), 常量(pi, e)
+      required:
+        - expression
+    handler:
+      type: function
+      module: tools.builtin.calculator
+      function: calculate
+      timeout: 5000
+    enabled: true
+
+# MCP 服务器配置
+# 可以根据需要添加风险相关的 MCP 服务
+mcp_servers: []
+
+# MCP 工具配置
+mcp_tools: []
+
+# Function Call 配置
+function_call:
+  strategy: auto
+  max_iterations: 10  # 风险分析可能需要更多迭代
+  timeout: 30000
+
+# 过滤器配置
+filters:
+  - enabled: true
+    name: audit
+    type: audit
+    priority: 10
+    config:
+      enable_request_logging: true
+      enable_response_logging: true
+      log_sensitive_data: false  # 风险数据可能敏感，谨慎记录
+      log_level: info
+  
+  - enabled: true
+    name: input_validation
+    type: input_validation
+    priority: 100
+    config:
+      max_message_length: 20000  # 风险分析可能需要更长的输入
+      max_metadata_size: 2048
+      blocked_words: []
+      required_fields: []
+      allowed_content_types:
+        - application/json
+  
+  - enabled: true
+    name: output_processing
+    type: output_processing
+    priority: 200
+    config:
+      sanitize_output: true
+      max_response_size: 10485760
+      add_response_headers: true
+      cors_headers: true
+      compression_enabled: false
