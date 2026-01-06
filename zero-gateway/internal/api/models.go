@@ -8,6 +8,7 @@ import (
 type ChatRequest struct {
 	SessionID string                 `json:"session_id" binding:"required"`
 	Message   string                 `json:"message" binding:"required"`
+	Stream    bool                   `json:"stream,omitempty"` // 是否使用流式响应，默认为false（兼容：如果请求中没有此字段，默认为false）
 	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 }
 
@@ -18,20 +19,20 @@ type CreateSessionRequest struct {
 
 // ChatResponse represents a chat response
 type ChatResponse struct {
-	Message       string                 `json:"message"`
-	ToolCalls     []ToolCall             `json:"tool_calls,omitempty"`
-	Usage         Usage                  `json:"usage"`
-	ProcessingTime float64               `json:"processing_time"`
+	Message        string     `json:"message"`
+	ToolCalls      []ToolCall `json:"tool_calls,omitempty"`
+	Usage          Usage      `json:"usage"`
+	ProcessingTime float64    `json:"processing_time"`
 }
 
 // ToolCall represents a tool call in the response
 type ToolCall struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Arguments map[string]interface{} `json:"arguments"`
-	Result   interface{} `json:"result,omitempty"`
-	Error    string `json:"error,omitempty"`
-	ExecutionTime float64 `json:"execution_time,omitempty"`
+	ID            string                 `json:"id"`
+	Name          string                 `json:"name"`
+	Arguments     map[string]interface{} `json:"arguments"`
+	Result        interface{}            `json:"result,omitempty"`
+	Error         string                 `json:"error,omitempty"`
+	ExecutionTime float64                `json:"execution_time,omitempty"`
 }
 
 // Usage represents token usage information
@@ -61,15 +62,24 @@ type Message struct {
 
 // Tool represents an available tool
 type Tool struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	ID          string                 `json:"id"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
 	Parameters  map[string]interface{} `json:"parameters,omitempty"`
 }
 
-// ErrorResponse represents an error response
+// ErrorResponse represents an error response (OpenAPI standard format)
 type ErrorResponse struct {
-	Error   string `json:"error"`
-	Code    string `json:"code,omitempty"`
-	Message string `json:"message,omitempty"`
+	Error struct {
+		Code    string                 `json:"code"`              // 错误码（字符串，如 "INVALID_REQUEST"）
+		Message string                 `json:"message"`           // 错误消息
+		Details map[string]interface{} `json:"details,omitempty"` // 错误详情
+	} `json:"error"`
+	ErrorCode int `json:"error_code,omitempty"` // 向后兼容：数值错误码
+}
+
+// SuccessResponse represents a successful response (OpenAPI standard format)
+type SuccessResponse struct {
+	Data interface{}            `json:"data"`           // 响应数据
+	Meta map[string]interface{} `json:"meta,omitempty"` // 元数据（如分页信息、请求ID等）
 }

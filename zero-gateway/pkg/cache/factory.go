@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/your-org/zero-gateway/internal/config"
+	"zero-gateway/internal/config"
 )
 
 // CacheFactory manages cache instances

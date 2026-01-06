@@ -81,20 +81,27 @@ def main():
     logger.info("This service provides AI inference and MCP tool orchestration via HTTP/2")
 
     try:
-        # 启动FastAPI服务器
-        import uvicorn
+        # 启动FastAPI服务器，使用hypercorn支持HTTP/2
+        import asyncio
+        from hypercorn.asyncio import serve
+        from hypercorn.config import Config
         from api import app
 
-        uvicorn.run(
-            app,
-            host=host,
-            port=port,
-            log_level=log_level.lower(),
-            access_log=True,
-            server_header=True,  # 显示服务标识
-            date_header=False,
-            # HTTP/2 通过客户端自动协商启用
-        )
+        # 配置hypercorn支持HTTP/2 (h2c - HTTP/2 over cleartext)
+        config = Config()
+        config.bind = [f"{host}:{port}"]
+        config.loglevel = log_level.upper()
+        config.accesslog = "-"  # 输出到stdout
+        config.errorlog = "-"   # 输出到stderr
+        config.use_reloader = False
+        
+        # hypercorn默认支持HTTP/2，会自动协商
+        # 如果客户端支持HTTP/2（如Go的http2.Transport），将使用HTTP/2
+        # 否则降级到HTTP/1.1
+        logger.info("Hypercorn configured with HTTP/2 support (h2c)")
+
+        # 运行hypercorn服务器
+        asyncio.run(serve(app, config))
 
     except KeyboardInterrupt:
         logger.info("Server stopped by user")

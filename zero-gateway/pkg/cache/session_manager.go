@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/your-org/zero-gateway/pkg/api"
+	"zero-gateway/internal/api"
 )
 
 // SessionManager manages chat sessions using Redis

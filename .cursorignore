@@ -59,15 +59,9 @@ docs/
 !README.md
 
 # Scripts and deployment files (infrastructure)
-install.sh
-start.sh
-test.sh
 Makefile
 zero-agent/Makefile
 zero-gateway/Makefile
-*.sh
-*.yml
-*.yaml
 docker-compose.yml
 Dockerfile*
 

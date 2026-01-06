@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"github.com/your-org/zero-gateway/pkg/filters"
+	"zero-gateway/pkg/filters"
 )
 
 // AuditFilter 审计过滤器

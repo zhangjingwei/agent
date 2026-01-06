@@ -135,7 +135,7 @@ func setDefaults() {
 	// Python service defaults
 	viper.SetDefault("python.host", "localhost")
 	viper.SetDefault("python.port", 8082)
-	viper.SetDefault("python.timeout", "30s")
+	viper.SetDefault("python.timeout", "5m") // 5分钟超时
 	viper.SetDefault("python.insecure_skip_verify", true)
 
 	// Redis defaults

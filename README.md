@@ -89,9 +89,14 @@ python3 -m venv venv
 # 激活虚拟环境
 source venv/bin/activate
 
-# 安装依赖
+# 安装依赖（包括hypercorn用于HTTP/2支持）
+pip install fastapi hypercorn python-dotenv structlog langchain langchain-core langchain-openai langchain-anthropic langgraph openai anthropic mcp pydantic httpx
+
+# 或者如果有requirements.txt
 pip install -r zero-agent/requirements.txt
 ```
+
+**注意**：Python服务使用 `hypercorn` 替代 `uvicorn` 以支持HTTP/2协议，提供更好的性能。
 
 #### 2. 安装Go依赖
 ```bash
@@ -230,3 +235,6 @@ cd zero-gateway && make run
 ## 📄 许可证
 
 本项目采用 MIT 许可证。
+
+
+python服务需要使用Nuitka 进行编译。

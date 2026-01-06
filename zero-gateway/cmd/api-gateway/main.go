@@ -13,19 +13,16 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"github.com/gin-contrib/cors"
-	"github.com/gin-contrib/gzip"
 	"github.com/gin-contrib/requestid"
-	"github.com/gin-contrib/secure"
 	"github.com/redis/go-redis/v9"
 	"github.com/ulule/limiter/v3"
 	limiterRedis "github.com/ulule/limiter/v3/drivers/store/redis"
 
-	"github.com/your-org/zero-gateway/internal/api"
-	"github.com/your-org/zero-gateway/internal/config"
-	"github.com/your-org/zero-gateway/pkg/filters"
-	"github.com/your-org/zero-gateway/pkg/filters/builtin"
-	"github.com/your-org/zero-gateway/pkg/middleware"
+	"zero-gateway/internal/api"
+	"zero-gateway/internal/config"
+	"zero-gateway/pkg/filters"
+	"zero-gateway/pkg/filters/builtin"
+	"zero-gateway/pkg/middleware"
 )
 
 func main() {
@@ -58,30 +55,26 @@ func main() {
 	r.Use(gin.Logger())
 	r.Use(gin.Recovery())
 
-	// 选择使用开源组件或自定义中间件
-	// 方案1: 使用开源组件（推荐用于生产环境）
-	setupMiddlewareWithOpenSource(r, cfg, logger)
+	// Setup middleware
+	// setupMiddlewareWithOpenSource(r, cfg, logger)
 
-	// 方案2: 使用自定义中间件（当前实现）
-	// setupMiddlewareCustom(r, cfg, logger)
-
-	// Initialize filter manager
+	// 过滤器管理器
 	filterManager := filters.NewFilterManager(logger)
 
-	// Register built-in filters
+	// 注册内置过滤器
 	registerBuiltinFilters(filterManager, logger)
 
-	// Add filter middleware
+	// 添加过滤器中间件
 	filterMiddleware := filters.NewFilterMiddleware(filterManager)
 	r.Use(filterMiddleware.Handler())
 
-	// Initialize API handlers
+	// 初始化API处理器
 	apiHandler := api.NewHandler(cfg, logger)
 
-	// Setup routes
-	setupRoutes(r, apiHandler)
+	// 设置路由
+	api.SetupRoutes(r, apiHandler)
 
-	// Health check endpoint
+	// 健康检查端点
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"status":    "healthy",
@@ -91,9 +84,9 @@ func main() {
 	})
 
 	// Filter metrics endpoint
-	r.GET("/api/v1/filters/metrics", filterManager.HealthCheckHandler())
+	// r.GET("/api/v1/filters/metrics", filterManager.HealthCheckHandler())
 
-	// Start server
+	// 启动服务器
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
 		Handler:      r,
@@ -102,7 +95,7 @@ func main() {
 		IdleTimeout:  cfg.Server.IdleTimeout,
 	}
 
-	// Start server in a goroutine
+	// 启动服务器
 	go func() {
 		logger.Info("Starting API Gateway server",
 			zap.Int("port", cfg.Server.Port),
@@ -113,14 +106,14 @@ func main() {
 		}
 	}()
 
-	// Wait for interrupt signal to gracefully shutdown the server
+	// 等待中断信号以优雅地关闭服务器
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	logger.Info("Shutting down server...")
 
-	// Give outstanding requests 30 seconds to complete
+	// 给未完成的请求30秒时间完成
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -172,50 +165,38 @@ func registerBuiltinFilters(manager *filters.FilterManager, logger *zap.Logger) 
 
 // setupMiddlewareWithOpenSource 使用开源组件设置中间件（推荐方案）
 func setupMiddlewareWithOpenSource(r *gin.Engine, cfg *config.Config, logger *zap.Logger) {
-	// 1. 请求ID中间件
+	// 请求ID中间件
 	r.Use(requestid.New())
 
-	// 2. 限流中间件（强制使用 Redis 分布式限流）
-	// 创建Redis客户端
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port),
-		Password: cfg.Redis.Password,
-		DB:       cfg.Redis.DB,
-		PoolSize: cfg.Redis.PoolSize,
-	})
+	// 限流
+	// redisClient := redis.NewClient(&redis.Options{
+	// 	Addr:     fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port),
+	// 	Password: cfg.Redis.Password,
+	// 	DB:       cfg.Redis.DB,
+	// 	PoolSize: cfg.Redis.PoolSize,
+	// })
 
-	// 验证Redis连接（强制要求）
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if _, err := redisClient.Ping(ctx).Result(); err != nil {
-		logger.Fatal("Redis connection failed - Redis is required for distributed rate limiting",
-			zap.Error(err),
-			zap.String("redis_addr", fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)))
-		return
-	}
-
-	setupRateLimitWithRedis(r, cfg, logger, redisClient)
+	// setupRateLimitWithRedis(r, cfg, logger, redisClient)
 
 	// 3. CORS中间件（替换自定义实现）
-	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"*"},
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"*"},
-		AllowCredentials: true,
-	}))
+	// r.Use(cors.New(cors.Config{
+	// 	AllowOrigins:     []string{"*"},
+	// 	AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+	// 	AllowHeaders:     []string{"*"},
+	// 	AllowCredentials: true,
+	// }))
 
 	// 4. 安全头中间件
-	r.Use(secure.New(secure.Config{
-		FrameDeny:          true,
-		ContentTypeNosniff: true,
-		BrowserXssFilter:   true,
-	}))
+	// r.Use(secure.New(secure.Config{
+	// 	FrameDeny:          true,
+	// 	ContentTypeNosniff: true,
+	// 	BrowserXssFilter:   true,
+	// }))
 
 	// 5. Gzip压缩
-	r.Use(gzip.Gzip(gzip.DefaultCompression))
+	// r.Use(gzip.Gzip(gzip.DefaultCompression))
 
-	logger.Info("Using open source middleware components",
-		zap.String("rate_limit", fmt.Sprintf("%d requests per %v", cfg.Security.RateLimitRequests, cfg.Security.RateLimitWindow)))
+	logger.Info("Using open source middleware components", zap.String("rate_limit", fmt.Sprintf("%d requests per %v", cfg.Security.RateLimitRequests, cfg.Security.RateLimitWindow)))
 }
 
 // setupMiddlewareCustom 使用自定义中间件设置（当前实现）
@@ -223,21 +204,6 @@ func setupMiddlewareCustom(r *gin.Engine, cfg *config.Config, logger *zap.Logger
 	r.Use(middleware.CORS())
 	r.Use(middleware.RateLimit(cfg.Security.RateLimitRequests, cfg.Security.RateLimitWindow))
 	r.Use(middleware.RequestLogger(logger))
-}
-
-func setupRoutes(r *gin.Engine, handler *api.Handler) {
-	apiV1 := r.Group("/api/v1")
-	{
-		// Chat endpoints
-		apiV1.POST("/chat", handler.Chat)
-		apiV1.POST("/chat/stream", handler.ChatStream)
-		apiV1.POST("/sessions", handler.CreateSession)
-		apiV1.GET("/sessions/:session_id/history", handler.GetHistory)
-		apiV1.DELETE("/sessions/:session_id", handler.ClearSession)
-
-		// Tools endpoints
-		apiV1.GET("/tools", handler.ListTools)
-	}
 }
 
 // setupRateLimitWithRedis 使用Redis存储的分布式限流
