@@ -466,9 +466,9 @@ sudo tar -C /usr/local -xzf go1.21.5.linux-amd64.tar.gz
 export PATH=$PATH:/usr/local/go/bin
 
 # 初始化Go模块
-mkdir nexus-agent-go
-cd nexus-agent-go
-go mod init github.com/your-org/nexus-agent-go
+mkdir zero-agent-go
+cd zero-agent-go
+go mod init github.com/your-org/zero-agent-go
 
 # 安装依赖
 go get google.golang.org/grpc
@@ -479,7 +479,7 @@ go get github.com/panjf2000/ants/v2  # 协程池
 
 #### 项目结构规划
 ```
-nexus-agent-go/
+zero-agent-go/
 ├── cmd/                    # 主程序入口
 │   ├── api-gateway/       # API网关服务
 │   └── file-service/      # 文件处理服务
@@ -719,7 +719,7 @@ services:
       - "8081:8081"
 
   agent-core:
-    image: nexus-agent:latest
+    image: zero-agent:latest
     ports:
       - "8082:8082"
 

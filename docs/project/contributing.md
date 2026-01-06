@@ -8,8 +8,8 @@
 
 1. **Fork项目**
    ```bash
-   git clone https://github.com/your-username/nexus-agent.git
-   cd nexus-agent
+   git clone https://github.com/your-username/zero-agent.git
+   cd zero-agent
    ```
 
 2. **创建虚拟环境**
@@ -89,7 +89,7 @@ mypy .
 
 ### 1. 选择任务
 
-首先查看[GitHub Issues](https://github.com/your-repo/nexus-agent/issues)找到适合你的任务：
+首先查看[GitHub Issues](https://github.com/your-repo/zero-agent/issues)找到适合你的任务：
 
 - **good first issue**: 适合新手的简单任务
 - **help wanted**: 需要帮助的任务

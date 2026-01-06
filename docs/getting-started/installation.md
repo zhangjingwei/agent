@@ -4,8 +4,8 @@
 
 ### 1. 克隆项目
 ```bash
-git clone https://github.com/your-repo/nexus-agent.git
-cd nexus-agent
+git clone https://github.com/your-repo/zero-agent.git
+cd zero-agent
 ```
 
 ### 2. 创建虚拟环境
@@ -39,8 +39,8 @@ python -c "import api, tools, llm; print('安装成功！')"
 ### 使用Docker Compose（推荐）
 ```bash
 # 克隆项目
-git clone https://github.com/your-repo/nexus-agent.git
-cd nexus-agent
+git clone https://github.com/your-repo/zero-agent.git
+cd zero-agent
 
 # 启动服务
 docker-compose -f docker/docker-compose.yml up --build
@@ -49,12 +49,12 @@ docker-compose -f docker/docker-compose.yml up --build
 ### 使用纯Docker
 ```bash
 # 构建镜像
-docker build -f docker/Dockerfile -t nexus-agent .
+docker build -f docker/Dockerfile -t zero-agent .
 
 # 运行容器
 docker run -p 8080:8080 \
   -e OPENAI_API_KEY="your-api-key" \
-  nexus-agent
+  zero-agent
 ```
 
 ## 方式三：开发环境安装

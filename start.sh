@@ -7,17 +7,23 @@ set -e
 echo "启动 Nexus Agent 系统..."
 
 # 加载环境变量配置
-if [ -f "nexus-agent/.env" ]; then
+if [ -f "zero-agent/.env" ]; then
     echo "加载环境配置..."
-    export $(grep -v '^#' nexus-agent/.env | xargs)
+    # 移除BOM并正确解析环境变量
+    while IFS='=' read -r key value; do
+        # 跳过注释行和空行
+        [[ $key =~ ^[[:space:]]*# ]] && continue
+        [[ -z $key ]] && continue
+        export "$key=$value"
+    done < <(tail -c +4 zero-agent/.env 2>/dev/null || cat zero-agent/.env)
 else
-    echo "警告: 未找到 nexus-agent/.env 文件"
+    echo "警告: 未找到 zero-agent/.env 文件"
 fi
 
 # 检查环境变量
 if [ -z "$OPENAI_API_KEY" ] && [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$SILICONFLOW_API_KEY" ]; then
     echo "错误: 请设置至少一个LLM API密钥"
-    echo "   请在 nexus-agent/.env 文件中配置:"
+    echo "   请在 zero-agent/.env 文件中配置:"
     echo "   OPENAI_API_KEY 或 ANTHROPIC_API_KEY 或 SILICONFLOW_API_KEY"
     echo ""
     echo "   当前配置状态:"
@@ -46,7 +52,7 @@ echo "   API密钥状态: 已配置"
 
 # 启动Python AI核心服务（后台）
 echo "启动 Python AI 核心服务..."
-cd nexus-agent
+cd zero-agent
 source ../venv/bin/activate
 # 强制设置AI服务端口为8082，避免与.env文件中的配置冲突
 export API_PORT=8082
@@ -69,7 +75,7 @@ echo "AI 服务启动成功 (PID: $AI_SERVICE_PID)"
 
 # 启动Go API网关（后台）
 echo "启动 Go API 网关..."
-cd nexus-gateway
+cd zero-gateway
 go run cmd/api-gateway/main.go &
 GATEWAY_PID=$!
 

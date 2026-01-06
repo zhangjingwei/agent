@@ -86,10 +86,10 @@ source .env
 ### Docker配置问题
 ```bash
 # 检查容器日志
-docker logs nexus-agent
+docker logs zero-agent
 
 # 验证环境变量传递
-docker exec nexus-agent env | grep API_KEY
+docker exec zero-agent env | grep API_KEY
 ```
 
 ## 下一步

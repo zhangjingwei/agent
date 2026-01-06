@@ -92,7 +92,7 @@ CMD ["python", "-m", "scripts.start"]
 
 ```bash
 # 构建镜像
-docker build -t nexus-agent .
+docker build -t zero-agent .
 
 # 运行容器
 docker run -d \
@@ -101,7 +101,7 @@ docker run -d \
   -e OPENAI_API_KEY="your-api-key" \
   -e LOG_LEVEL=INFO \
   --restart unless-stopped \
-  nexus-agent
+  zero-agent
 
 # 查看日志
 docker logs -f agent-container
@@ -320,8 +320,8 @@ sudo useradd --create-home --shell /bin/bash agent
 sudo su - agent
 
 # 克隆代码
-git clone https://github.com/your-repo/nexus-agent.git
-cd nexus-agent
+git clone https://github.com/your-repo/zero-agent.git
+cd zero-agent
 
 # 创建虚拟环境
 python3.11 -m venv venv
@@ -354,9 +354,9 @@ Wants=network.target
 Type=simple
 User=agent
 Group=agent
-WorkingDirectory=/home/agent/nexus-agent
-Environment=PATH=/home/agent/nexus-agent/venv/bin
-ExecStart=/home/agent/nexus-agent/venv/bin/python -m scripts.start
+WorkingDirectory=/home/agent/zero-agent
+Environment=PATH=/home/agent/zero-agent/venv/bin
+ExecStart=/home/agent/zero-agent/venv/bin/python -m scripts.start
 ExecReload=/bin/kill -s HUP $MAINPID
 Restart=always
 RestartSec=5
@@ -395,7 +395,7 @@ sudo journalctl -u universal-agent -f
 
 ```bash
 # /etc/logrotate.d/universal-agent
-/home/agent/nexus-agent/logs/*.log {
+/home/agent/zero-agent/logs/*.log {
     daily
     missingok
     rotate 7
@@ -427,7 +427,7 @@ sudo journalctl -u universal-agent -f
     "containerDefinitions": [
         {
             "name": "agent",
-            "image": "your-registry/nexus-agent:latest",
+            "image": "your-registry/zero-agent:latest",
             "essential": true,
             "portMappings": [
                 {
@@ -506,7 +506,7 @@ spec:
   template:
     spec:
       containers:
-      - image: gcr.io/your-project/nexus-agent:latest
+      - image: gcr.io/your-project/zero-agent:latest
         ports:
         - containerPort: 8080
         env:
@@ -560,7 +560,7 @@ properties:
       value: your-siliconflow-key
   template:
     containers:
-    - image: your-registry.azurecr.io/nexus-agent:latest
+    - image: your-registry.azurecr.io/zero-agent:latest
       name: agent
       env:
       - name: ENVIRONMENT

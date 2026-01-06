@@ -1,0 +1,103 @@
+# Virtual environments
+venv/
+zero-agent/venv/
+
+# Build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# Go build artifacts
+zero-gateway/bin/
+zero-gateway/build/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+zero-gateway/logs/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation (non-core business logic)
+docs/
+*.md
+!README.md
+
+# Scripts and deployment files (infrastructure)
+install.sh
+start.sh
+test.sh
+Makefile
+zero-agent/Makefile
+zero-gateway/Makefile
+*.sh
+*.yml
+*.yaml
+docker-compose.yml
+Dockerfile*
+
+# Dependencies
+requirements.txt
+zero-agent/requirements.txt
+go.mod
+go.sum
+pyproject.toml
+setup.py
+
+# Test files
+tests/
+*_test.go
+*_test.py
+test_*.py
+
+# Configuration files (may contain sensitive data)
+.env
+*.env
+config/settings.local.*
+*.local.*
+
+# Node modules (if any)
+node_modules/
+
+# Git
+.git/
+.gitignore
+
+# Cursor specific
+.cursor/
+terminals/

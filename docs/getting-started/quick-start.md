@@ -54,13 +54,13 @@ docker-compose down
 #### 使用纯Docker
 ```bash
 # 构建镜像
-docker build -f docker/Dockerfile -t nexus-agent .
+docker build -f docker/Dockerfile -t zero-agent .
 
 # 运行容器
 docker run -p 8080:8080 \
   -e SILICONFLOW_API_KEY="your-api-key" \
   --name agent-container \
-  nexus-agent
+  zero-agent
 
 # 查看日志
 docker logs agent-container
@@ -217,14 +217,14 @@ tail -f logs/agent.log
 docker ps
 
 # 进入容器
-docker exec -it nexus-agent bash
+docker exec -it zero-agent bash
 
 # 查看容器日志
-docker logs -f nexus-agent
+docker logs -f zero-agent
 
 # 清理容器
-docker stop nexus-agent
-docker rm nexus-agent
+docker stop zero-agent
+docker rm zero-agent
 ```
 
 ### 开发环境调试

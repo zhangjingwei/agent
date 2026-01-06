@@ -1,4 +1,4 @@
-# Nexus Agent
+# Zero Agent
 
 高性能AI Agent系统，采用微服务架构：Go API网关 + Python AI核心。
 
@@ -26,17 +26,17 @@ export OPENAI_API_KEY="your-key-here"
 ### 方式2：Docker Compose
 ```bash
 # 构建并启动所有服务
-docker-compose -f nexus-gateway/docker-compose.yml up --build
+docker-compose -f zero-gateway/docker-compose.yml up --build
 ```
 
 ### 方式3：手动启动
 ```bash
 # 终端1：启动Python AI服务
-cd nexus-agent
+cd zero-agent
 python -m scripts.start
 
 # 终端2：启动Go API网关
-cd nexus-gateway
+cd zero-gateway
 make run
 ```
 
@@ -62,7 +62,7 @@ make run
 ```bash
 # 克隆项目（如果还没有的话）
 git clone <repository-url>
-cd nexus-agent
+cd zero-agent
 
 # 运行自动安装脚本
 ./install.sh
@@ -90,12 +90,12 @@ python3 -m venv venv
 source venv/bin/activate
 
 # 安装依赖
-pip install -r nexus-agent/requirements.txt
+pip install -r zero-agent/requirements.txt
 ```
 
 #### 2. 安装Go依赖
 ```bash
-cd nexus-gateway
+cd zero-gateway
 
 # 下载依赖
 go mod tidy
@@ -108,11 +108,11 @@ make build
 #### 3. 配置环境变量
 ```bash
 # 复制环境配置模板
-cp nexus-gateway/env.example nexus-gateway/.env
+cp zero-gateway/env.example zero-gateway/.env
 
 # 编辑配置文件
-nano nexus-agent/.env     # 配置API密钥
-nano nexus-gateway/.env   # 调整Go服务配置
+nano zero-agent/.env     # 配置API密钥
+nano zero-gateway/.env   # 调整Go服务配置
 ```
 
 ## 🔧 环境配置
@@ -160,14 +160,14 @@ curl -X POST http://localhost:8080/api/v1/chat \
 ## 📁 项目结构
 
 ```
-nexus-agent/          # Python AI核心服务
+zero-agent/          # Python AI核心服务
 ├── api/             # FastAPI应用
 ├── core/            # AI推理引擎
 ├── orchestration/   # LangGraph工作流
 ├── tools/           # MCP工具管理
 └── scripts/start.py # AI服务启动脚本
 
-nexus-gateway/        # Go API网关服务
+zero-gateway/        # Go API网关服务
 ├── cmd/             # 主程序
 ├── internal/        # 私有代码
 ├── pkg/             # 共享库
@@ -181,7 +181,7 @@ start.sh             # 系统启动脚本
 
 ### 构建Go API网关
 ```bash
-cd nexus-gateway
+cd zero-gateway
 make build
 ```
 
@@ -189,13 +189,13 @@ make build
 
 **Python AI服务**:
 ```bash
-cd nexus-agent
+cd zero-agent
 python -m scripts.start
 ```
 
 **Go API网关**:
 ```bash
-cd nexus-gateway
+cd zero-gateway
 make run
 ```
 
@@ -213,10 +213,10 @@ curl http://localhost:8080/health
 ### 查看日志
 ```bash
 # AI服务日志（在另一个终端）
-cd nexus-agent && python -m scripts.start
+cd zero-agent && python -m scripts.start
 
 # API网关日志
-cd nexus-gateway && make run
+cd zero-gateway && make run
 ```
 
 ## 🤝 贡献

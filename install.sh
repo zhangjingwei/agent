@@ -102,11 +102,11 @@ main() {
     pip install --upgrade pip --quiet
 
     # 安装Python依赖
-    if [ -f "nexus-agent/requirements.txt" ]; then
-        pip install --break-system-packages -r nexus-agent/requirements.txt --quiet
+    if [ -f "zero-agent/requirements.txt" ]; then
+        pip install --break-system-packages -i https://pypi.tuna.tsinghua.edu.cn/simple -r zero-agent/requirements.txt --quiet
         log_success "Python依赖安装完成"
     else
-        log_error "找不到 nexus-agent/requirements.txt 文件"
+        log_error "找不到 zero-agent/requirements.txt 文件"
         exit 1
     fi
 
@@ -115,7 +115,7 @@ main() {
 
     # 安装Go依赖
     log_info "安装Go依赖..."
-    cd nexus-gateway
+    cd zero-gateway
 
     if [ -f "go.mod" ]; then
         go mod tidy
@@ -140,8 +140,8 @@ main() {
 
     # 创建环境配置文件
     log_info "创建环境配置文件..."
-    if [ ! -f "nexus-agent/.env" ]; then
-        cat > nexus-agent/.env << EOF
+    if [ ! -f "zero-agent/.env" ]; then
+        cat > zero-agent/.env << EOF
 # Nexus Agent Python Service Configuration
 
 # LLM Provider Configuration (choose one)
@@ -166,16 +166,16 @@ LOG_LEVEL=info
 # MCP Configuration
 MCP_ENABLED=true
 EOF
-        log_success "Python服务环境配置文件创建成功: nexus-agent/.env"
-        log_warn "请编辑 nexus-agent/.env 文件，配置您的API密钥"
+        log_success "Python服务环境配置文件创建成功: zero-agent/.env"
+        log_warn "请编辑 zero-agent/.env 文件，配置您的API密钥"
     else
         log_warn "Python环境配置文件已存在，跳过创建"
     fi
 
-    if [ ! -f "nexus-gateway/.env" ]; then
-        cp nexus-gateway/env.example nexus-gateway/.env
-        log_success "Go服务环境配置文件创建成功: nexus-gateway/.env"
-        log_warn "请根据需要编辑 nexus-gateway/.env 文件"
+    if [ ! -f "zero-gateway/.env" ]; then
+        cp zero-gateway/env.example zero-gateway/.env
+        log_success "Go服务环境配置文件创建成功: zero-gateway/.env"
+        log_warn "请根据需要编辑 zero-gateway/.env 文件"
     else
         log_warn "Go环境配置文件已存在，跳过创建"
     fi
@@ -203,7 +203,7 @@ EOF
     deactivate
 
     # 检查Go构建结果
-    if [ -f "nexus-gateway/bin/api-gateway" ] || [ -f "nexus-gateway/api-gateway" ]; then
+    if [ -f "zero-gateway/bin/api-gateway" ] || [ -f "zero-gateway/api-gateway" ]; then
         log_success "Go构建验证通过"
     else
         log_error "Go构建验证失败"
@@ -214,8 +214,8 @@ EOF
     echo ""
     echo "接下来请执行以下步骤："
     echo "1. 编辑配置文件："
-    echo "   - nexus-agent/.env (配置API密钥)"
-    echo "   - nexus-gateway/.env (根据需要调整)"
+    echo "   - zero-agent/.env (配置API密钥)"
+    echo "   - zero-gateway/.env (根据需要调整)"
     echo ""
     echo "2. 启动服务："
     echo "   ./start.sh"

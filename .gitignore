@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+.env
+venv/
+*/venv/
+
 # C extensions
 *.so
 
@@ -204,13 +208,13 @@ secrets/
 
 # Project specific ignores
 # Nexus Agent Python virtual environment and build artifacts
-nexus-agent/venv/
-nexus-agent/nexus_agent.egg-info/
-nexus-agent/=*
+zero-agent/venv/
+zero-agent/nexus_agent.egg-info/
+zero-agent/=*
 
 # Nexus Gateway Go build artifacts
-nexus-gateway/build/
-nexus-gateway/bin/
+zero-gateway/build/
+zero-gateway/bin/
 
 # Environment files (keep .env.example)
 .env
@@ -239,3 +243,4 @@ Desktop.ini
 access.log
 error.log
 debug.log
+venv/*.*

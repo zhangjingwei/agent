@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zero-agent"
+version = "0.1.0"
+description = "Nexus Agent - Universal AI Agent Framework"
+authors = [
+    {name = "R&D Team", email = "team@example.com"}
+]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.5.0",
+    "httpx>=0.25.0",
+    "python-dotenv>=1.0.0",
+    "structlog>=23.2.0",
+    "aiofiles>=23.2.0",
+    "langchain==0.2.17",
+    "langchain-core==0.2.43",
+    "langchain-openai==0.1.25",
+    "langchain-anthropic==0.1.23",
+    "langgraph==0.2.58",
+    "langgraph-checkpoint-sqlite==2.0.1",
+    "mcp>=0.1.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "mypy>=1.7.0",
+    "flake8>=6.1.0"
+]
+
+[project.scripts]
+start = "scripts.start:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tools*", "api*", "sdk*", "scripts*", "llm*", "orchestration*", "core*", "config*"]
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
