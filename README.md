@@ -237,4 +237,57 @@ cd zero-gateway && make run
 本项目采用 MIT 许可证。
 
 
-python服务需要使用Nuitka 进行编译。
+计划：python服务需要使用Nuitka 进行编译。
+
+启动 Agent（启用服务注册）
+进入项目目录并激活虚拟环境
+cd /mnt/d/workspace/prodject
+source venv/bin/activate
+
+设置环境变量并启动 Agent
+export REDIS_HOST=localhost
+export REDIS_PORT=6379
+export API_PORT=8082
+export LOG_FILE=logs/agent-1.log
+export LOG_TO_CONSOLE=false
+python3 -m api.app
+
+启动 Gateway（启用服务发现）
+cd /mnt/d/workspace/prodject/zero-gateway
+
+# 设置环境变量启用服务发现
+export PYTHON_USE_SERVICE_DISCOVERY=true
+export PYTHON_SERVICE_NAME=zero-agent
+export PYTHON_LOAD_BALANCE_STRATEGY=round_robin
+export REDIS_HOST=localhost
+export REDIS_PORT=6379
+export LOG_FILE=logs/gateway.log
+export LOG_TO_CONSOLE=false
+go run cmd/api-gateway/main.go
+
+启动多个 Agent 实例（测试负载均衡）
+cd /mnt/d/workspace/prodject
+source venv/bin/activate
+cd zero-agent
+
+# 使用不同的端口
+export REDIS_HOST=localhost
+export REDIS_PORT=6379
+export API_PORT=8083
+export LOG_FILE=logs/agent-2.log
+export LOG_TO_CONSOLE=false
+python3 -m api.app
+
+启动第三个实例：
+# 在另一个终端
+cd /mnt/d/workspace/prodject
+source venv/bin/activate
+cd zero-agent
+
+export REDIS_HOST=localhost
+export REDIS_PORT=6379
+export API_PORT=8084
+export LOG_FILE=logs/agent-3.log
+export LOG_TO_CONSOLE=false
+python3 -m api.app
+

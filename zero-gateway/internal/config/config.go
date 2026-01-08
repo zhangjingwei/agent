@@ -29,10 +29,17 @@ type ServerConfig struct {
 
 // PythonConfig holds Python agent service configuration
 type PythonConfig struct {
-	Host               string        `mapstructure:"host"`
-	Port               int           `mapstructure:"port"`
-	Timeout            time.Duration `mapstructure:"timeout"`
-	InsecureSkipVerify bool          `mapstructure:"insecure_skip_verify"`
+	Host                string        `mapstructure:"host"`
+	Port                int           `mapstructure:"port"`
+	Timeout             time.Duration `mapstructure:"timeout"`
+	InsecureSkipVerify  bool          `mapstructure:"insecure_skip_verify"`
+	MaxIdleConns        int           `mapstructure:"max_idle_conns"`          // 最大空闲连接数
+	MaxIdleConnsPerHost int           `mapstructure:"max_idle_conns_per_host"` // 每个主机的最大空闲连接数
+	MaxConnsPerHost     int           `mapstructure:"max_conns_per_host"`      // 每个主机的最大连接数
+	IdleConnTimeout     time.Duration `mapstructure:"idle_conn_timeout"`       // 空闲连接超时时间
+	UseServiceDiscovery bool          `mapstructure:"use_service_discovery"`   // 是否使用服务发现
+	ServiceName         string        `mapstructure:"service_name"`            // 服务名称
+	LoadBalanceStrategy string        `mapstructure:"load_balance_strategy"`   // 负载均衡策略
 }
 
 // RedisConfig holds Redis configuration
@@ -55,8 +62,10 @@ type FileConfig struct {
 
 // LoggingConfig holds logging configuration
 type LoggingConfig struct {
-	Level  string `mapstructure:"level"`
-	Format string `mapstructure:"format"`
+	Level      string `mapstructure:"level"`
+	Format     string `mapstructure:"format"`
+	OutputFile string `mapstructure:"output_file"` // 日志文件路径，为空则输出到 stderr
+	LogDir     string `mapstructure:"log_dir"`     // 日志目录（如果 output_file 是相对路径）
 }
 
 // MetricsConfig holds metrics configuration
@@ -68,11 +77,23 @@ type MetricsConfig struct {
 
 // SecurityConfig holds security-related configuration
 type SecurityConfig struct {
-	RateLimitRequests int           `mapstructure:"rate_limit_requests"`
-	RateLimitWindow   time.Duration `mapstructure:"rate_limit_window"`
-	RequestTimeout    time.Duration `mapstructure:"request_timeout"`
-	MaxRequestSize    string        `mapstructure:"max_request_size"`
-	CORSOrigins       []string      `mapstructure:"cors_origins"`
+	RateLimitRequests int                  `mapstructure:"rate_limit_requests"`
+	RateLimitWindow   time.Duration        `mapstructure:"rate_limit_window"`
+	RequestTimeout    time.Duration        `mapstructure:"request_timeout"`
+	MaxRequestSize    string               `mapstructure:"max_request_size"`
+	CORSOrigins       []string             `mapstructure:"cors_origins"`
+	CircuitBreaker    CircuitBreakerConfig `mapstructure:"circuit_breaker"`
+}
+
+// CircuitBreakerConfig holds circuit breaker configuration
+type CircuitBreakerConfig struct {
+	Enabled               bool          `mapstructure:"enabled"`                 // 是否启用熔断器
+	UserFailureThreshold  int           `mapstructure:"user_failure_threshold"`  // 用户级失败阈值
+	UserSuccessThreshold  int           `mapstructure:"user_success_threshold"`  // 用户级成功阈值
+	UserTimeout           time.Duration `mapstructure:"user_timeout"`            // 用户级熔断超时
+	AgentFailureThreshold int           `mapstructure:"agent_failure_threshold"` // Agent级失败阈值
+	AgentSuccessThreshold int           `mapstructure:"agent_success_threshold"` // Agent级成功阈值
+	AgentTimeout          time.Duration `mapstructure:"agent_timeout"`           // Agent级熔断超时
 }
 
 // Load loads configuration from environment variables and config files
@@ -137,13 +158,20 @@ func setDefaults() {
 	viper.SetDefault("python.port", 8082)
 	viper.SetDefault("python.timeout", "5m") // 5分钟超时
 	viper.SetDefault("python.insecure_skip_verify", true)
+	viper.SetDefault("python.max_idle_conns", 100)                  // 最大空闲连接数
+	viper.SetDefault("python.max_idle_conns_per_host", 20)          // 每个主机的最大空闲连接数
+	viper.SetDefault("python.max_conns_per_host", 50)               // 每个主机的最大连接数
+	viper.SetDefault("python.idle_conn_timeout", "90s")             // 空闲连接超时时间
+	viper.SetDefault("python.use_service_discovery", false)         // 是否使用服务发现
+	viper.SetDefault("python.service_name", "zero-agent")           // 服务名称
+	viper.SetDefault("python.load_balance_strategy", "round_robin") // 负载均衡策略
 
 	// Redis defaults
 	viper.SetDefault("redis.host", "localhost")
 	viper.SetDefault("redis.port", 6379)
 	viper.SetDefault("redis.password", "")
 	viper.SetDefault("redis.db", 0)
-	viper.SetDefault("redis.pool_size", 10)
+	viper.SetDefault("redis.pool_size", 50) // 从 10 提升到 50，支持更高并发
 
 	// File service defaults
 	viper.SetDefault("file.max_size", "100MB")
@@ -167,6 +195,15 @@ func setDefaults() {
 	viper.SetDefault("security.request_timeout", "30s")
 	viper.SetDefault("security.max_request_size", "10MB")
 	viper.SetDefault("security.cors_origins", []string{"*"})
+
+	// Circuit breaker defaults
+	viper.SetDefault("security.circuit_breaker.enabled", true)
+	viper.SetDefault("security.circuit_breaker.user_failure_threshold", 3)   // 用户级：3次失败就熔断
+	viper.SetDefault("security.circuit_breaker.user_success_threshold", 1)   // 用户级：1次成功就恢复
+	viper.SetDefault("security.circuit_breaker.user_timeout", "30s")         // 用户级：30秒后尝试恢复
+	viper.SetDefault("security.circuit_breaker.agent_failure_threshold", 10) // Agent级：10次失败才熔断
+	viper.SetDefault("security.circuit_breaker.agent_success_threshold", 3)  // Agent级：3次成功才恢复
+	viper.SetDefault("security.circuit_breaker.agent_timeout", "60s")        // Agent级：60秒后尝试恢复
 }
 
 func bindEnvVars() {
@@ -178,6 +215,13 @@ func bindEnvVars() {
 	viper.BindEnv("python.port", "PYTHON_AGENT_PORT")
 	viper.BindEnv("python.timeout", "PYTHON_AGENT_TIMEOUT")
 	viper.BindEnv("python.insecure_skip_verify", "PYTHON_INSECURE_SKIP_VERIFY")
+	viper.BindEnv("python.max_idle_conns", "PYTHON_MAX_IDLE_CONNS")
+	viper.BindEnv("python.max_idle_conns_per_host", "PYTHON_MAX_IDLE_CONNS_PER_HOST")
+	viper.BindEnv("python.max_conns_per_host", "PYTHON_MAX_CONNS_PER_HOST")
+	viper.BindEnv("python.idle_conn_timeout", "PYTHON_IDLE_CONN_TIMEOUT")
+	viper.BindEnv("python.use_service_discovery", "PYTHON_USE_SERVICE_DISCOVERY")
+	viper.BindEnv("python.service_name", "PYTHON_SERVICE_NAME")
+	viper.BindEnv("python.load_balance_strategy", "PYTHON_LOAD_BALANCE_STRATEGY")
 
 	// Redis bindings
 	viper.BindEnv("redis.host", "REDIS_HOST")
@@ -187,6 +231,8 @@ func bindEnvVars() {
 	// Logging bindings
 	viper.BindEnv("logging.level", "LOG_LEVEL")
 	viper.BindEnv("logging.format", "LOG_FORMAT")
+	viper.BindEnv("logging.output_file", "LOG_FILE")
+	viper.BindEnv("logging.log_dir", "LOG_DIR")
 
 	// File service bindings
 	viper.BindEnv("file.workers", "FILE_WORKERS")

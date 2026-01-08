@@ -16,15 +16,24 @@ type RedisCache struct {
 
 // NewRedisCache creates a new Redis cache instance
 func NewRedisCache(host string, port int, password string, db int, poolSize int) (*RedisCache, error) {
+	// 计算最小空闲连接数，至少为池大小的 20%，但不少于 5
+	minIdleConns := poolSize / 5
+	if minIdleConns < 5 {
+		minIdleConns = 5
+	}
+	
 	client := redis.NewClient(&redis.Options{
 		Addr:         fmt.Sprintf("%s:%d", host, port),
 		Password:     password,
 		DB:           db,
 		PoolSize:     poolSize,
-		MinIdleConns: 2,
+		MinIdleConns: minIdleConns, // 动态计算最小空闲连接数
 		DialTimeout:  5 * time.Second,
 		ReadTimeout:  3 * time.Second,
 		WriteTimeout: 3 * time.Second,
+		PoolTimeout:  4 * time.Second, // 连接池获取连接的超时时间
+		IdleTimeout:  5 * time.Minute,  // 空闲连接超时时间
+		IdleCheckFrequency: 1 * time.Minute, // 检查空闲连接的频率
 	})
 
 	// Test connection

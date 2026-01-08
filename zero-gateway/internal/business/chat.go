@@ -2,7 +2,6 @@ package business
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"zero-gateway/internal/infrastructure"
+	"zero-gateway/pkg/circuitbreaker"
 )
 
 // ChatService 聊天业务服务
@@ -19,14 +19,16 @@ type ChatService struct {
 	requestService *infrastructure.RequestService
 	httpClient     *infrastructure.HTTPClient
 	logger         *zap.Logger
+	breakerManager *circuitbreaker.Manager // 分层熔断器管理器
 }
 
 // NewChatService 创建聊天服务
-func NewChatService(requestService *infrastructure.RequestService, httpClient *infrastructure.HTTPClient, logger *zap.Logger) *ChatService {
+func NewChatService(requestService *infrastructure.RequestService, httpClient *infrastructure.HTTPClient, logger *zap.Logger, breakerManager *circuitbreaker.Manager) *ChatService {
 	return &ChatService{
 		requestService: requestService,
 		httpClient:     httpClient,
 		logger:         logger,
+		breakerManager: breakerManager,
 	}
 }
 
@@ -44,16 +46,49 @@ func (s *ChatService) HandleChatNonStream(c *gin.Context, req *infrastructure.Ch
 	// 准备请求（统一逻辑）
 	messageHistory, agentID, err := s.requestService.PrepareChatRequest(req)
 	if err != nil {
-		// 会话不存在时返回404
-		if err.Error() == "session not found" || fmt.Sprintf("%v", err) == "session not found" {
-			c.JSON(http.StatusNotFound, gin.H{
-				"error":      "Session not found",
-				"error_code": infrastructure.ErrCodeSessionNotFound,
-				"session_id": req.SessionID,
+		// 记录错误但继续处理（PrepareChatRequest 现在不会因为会话不存在而返回错误）
+		s.logger.Warn("PrepareChatRequest returned error, continuing anyway", zap.Error(err))
+	}
+
+	// 确保 agentID 不为空
+	if agentID == "" {
+		agentID = "zero"
+		s.logger.Warn("agent_id is empty, using default", zap.String("default_agent_id", agentID))
+	}
+
+	// 检查熔断器状态（使用session_id作为用户标识）
+	userKey := req.SessionID
+	if userKey == "" {
+		// 如果没有session_id，使用client IP作为fallback
+		userKey = c.ClientIP()
+	}
+
+	// 检查熔断器状态（如果启用了熔断器）
+	if s.breakerManager != nil {
+		allowed, userOpen, agentOpen := s.breakerManager.AllowRequest(userKey, agentID)
+		if !allowed {
+			var errorMsg string
+			var errorCode int
+			if userOpen {
+				errorMsg = "用户请求被熔断，请稍后重试"
+				errorCode = infrastructure.ErrCodeAgentServiceBusy
+				s.logger.Warn("用户级熔断器打开，拒绝请求",
+					zap.String("session_id", req.SessionID),
+					zap.String("agent_id", agentID))
+			} else if agentOpen {
+				errorMsg = "Agent服务暂时不可用，请稍后重试"
+				errorCode = infrastructure.ErrCodeAgentServiceUnavailable
+				s.logger.Warn("Agent级熔断器打开，拒绝请求",
+					zap.String("session_id", req.SessionID),
+					zap.String("agent_id", agentID))
+			}
+
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error":      errorMsg,
+				"error_code": errorCode,
 			})
 			return
 		}
-		// 其他错误继续处理（可能只是临时性问题）
 	}
 
 	s.logger.Info("准备请求Python服务", zap.String("agent_id", agentID), zap.String("session_id", req.SessionID), zap.Int("history_count", len(messageHistory)))
@@ -81,6 +116,9 @@ func (s *ChatService) HandleChatNonStream(c *gin.Context, req *infrastructure.Ch
 			errorCode = infrastructure.ErrCodeAgentServiceUnavailable
 		}
 
+		// 记录失败（网络错误不是429，应该触发熔断）
+		s.breakerManager.RecordFailure(userKey, agentID, false)
+
 		s.logger.Error("Failed to call Python service", zap.Error(err),
 			zap.String("url", pythonURL), zap.String("session_id", req.SessionID))
 		c.JSON(http.StatusServiceUnavailable, gin.H{
@@ -106,6 +144,8 @@ func (s *ChatService) HandleChatNonStream(c *gin.Context, req *infrastructure.Ch
 	// Handle different status codes
 	if resp.StatusCode != http.StatusOK {
 		var errorCode int
+		isRateLimit := resp.StatusCode == http.StatusTooManyRequests
+
 		switch resp.StatusCode {
 		case http.StatusBadRequest:
 			errorCode = infrastructure.ErrCodeInvalidRequest
@@ -119,14 +159,23 @@ func (s *ChatService) HandleChatNonStream(c *gin.Context, req *infrastructure.Ch
 			errorCode = infrastructure.ErrCodeAgentServiceError
 		}
 
+		// 记录失败（429错误不会触发熔断）
+		s.breakerManager.RecordFailure(userKey, agentID, isRateLimit)
+
 		s.logger.Error("Python service error",
 			zap.Int("status_code", resp.StatusCode),
-			zap.String("response", string(body)))
+			zap.String("response", string(body)),
+			zap.Bool("is_rate_limit", isRateLimit))
 		c.JSON(resp.StatusCode, gin.H{
 			"error":      "Agent service error",
 			"error_code": errorCode,
 		})
 		return
+	}
+
+	// 记录成功
+	if s.breakerManager != nil {
+		s.breakerManager.RecordSuccess(userKey, agentID)
 	}
 
 	// Parse response
@@ -144,12 +193,16 @@ func (s *ChatService) HandleChatNonStream(c *gin.Context, req *infrastructure.Ch
 	normalizedResponse := s.requestService.NormalizeChatResponse(response)
 
 	// Add assistant message to session
-	if s.requestService.SessionService().IsAvailable() {
+	if s.requestService.SessionService().IsAvailable() && req.SessionID != "" {
 		if message, ok := normalizedResponse["message"].(string); ok {
 			err = s.requestService.SessionService().AddMessage(req.SessionID, "assistant", message, nil)
 			if err != nil {
-				s.logger.Error("Failed to add assistant message to session", zap.Error(err),
-					zap.String("session_id", req.SessionID))
+				// 会话不存在是预期行为（用户可能没有先创建会话），使用 Debug 级别
+				// 不影响请求处理，只是无法保存历史记录
+				s.logger.Debug("Failed to add assistant message to session (session may not exist)",
+					zap.Error(err),
+					zap.String("session_id", req.SessionID),
+					zap.String("note", "This is expected if session was not created beforehand"))
 				// Continue returning response even if session save fails
 			}
 		}
@@ -169,16 +222,49 @@ func (s *ChatService) HandleChatStream(c *gin.Context, req *infrastructure.ChatR
 	// 准备请求（统一逻辑）
 	messageHistory, agentID, err := s.requestService.PrepareChatRequest(req)
 	if err != nil {
-		// 会话不存在时返回404
-		if err.Error() == "session not found" || fmt.Sprintf("%v", err) == "session not found" {
-			c.JSON(http.StatusNotFound, gin.H{
-				"error":      "Session not found",
-				"error_code": infrastructure.ErrCodeSessionNotFound,
-				"session_id": req.SessionID,
+		// 记录错误但继续处理
+		s.logger.Warn("PrepareChatRequest returned error, continuing anyway", zap.Error(err))
+	}
+
+	// 确保 agentID 不为空
+	if agentID == "" {
+		agentID = "zero"
+		s.logger.Warn("agent_id is empty, using default", zap.String("default_agent_id", agentID))
+	}
+
+	// 检查熔断器状态（使用session_id作为用户标识）
+	userKey := req.SessionID
+	if userKey == "" {
+		// 如果没有session_id，使用client IP作为fallback
+		userKey = c.ClientIP()
+	}
+
+	// 检查熔断器状态（如果启用了熔断器）
+	if s.breakerManager != nil {
+		allowed, userOpen, agentOpen := s.breakerManager.AllowRequest(userKey, agentID)
+		if !allowed {
+			var errorMsg string
+			var errorCode int
+			if userOpen {
+				errorMsg = "用户请求被熔断，请稍后重试"
+				errorCode = infrastructure.ErrCodeAgentServiceBusy
+				s.logger.Warn("用户级熔断器打开，拒绝流式请求",
+					zap.String("session_id", req.SessionID),
+					zap.String("agent_id", agentID))
+			} else if agentOpen {
+				errorMsg = "Agent服务暂时不可用，请稍后重试"
+				errorCode = infrastructure.ErrCodeAgentServiceUnavailable
+				s.logger.Warn("Agent级熔断器打开，拒绝流式请求",
+					zap.String("session_id", req.SessionID),
+					zap.String("agent_id", agentID))
+			}
+
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error":      errorMsg,
+				"error_code": errorCode,
 			})
 			return
 		}
-		// 其他错误继续处理（可能只是临时性问题）
 	}
 
 	s.logger.Info("准备请求Python服务 (流式)", zap.String("agent_id", agentID), zap.String("session_id", req.SessionID), zap.Int("history_count", len(messageHistory)))
@@ -212,6 +298,9 @@ func (s *ChatService) HandleChatStream(c *gin.Context, req *infrastructure.ChatR
 			errorCode = infrastructure.ErrCodeAgentServiceUnavailable
 		}
 
+		// 记录失败（网络错误不是429，应该触发熔断）
+		s.breakerManager.RecordFailure(userKey, agentID, false)
+
 		s.logger.Error("Failed to call Python service for streaming",
 			zap.Error(err),
 			zap.String("url", pythonURL),
@@ -235,6 +324,8 @@ func (s *ChatService) HandleChatStream(c *gin.Context, req *infrastructure.ChatR
 	// Handle different status codes
 	if resp.StatusCode != http.StatusOK {
 		var errorCode int
+		isRateLimit := resp.StatusCode == http.StatusTooManyRequests
+
 		switch resp.StatusCode {
 		case http.StatusBadRequest:
 			errorCode = infrastructure.ErrCodeInvalidRequest
@@ -248,16 +339,22 @@ func (s *ChatService) HandleChatStream(c *gin.Context, req *infrastructure.ChatR
 			errorCode = infrastructure.ErrCodeAgentServiceError
 		}
 
+		// 记录失败（429错误不会触发熔断）
+		s.breakerManager.RecordFailure(userKey, agentID, isRateLimit)
+
 		body, _ := io.ReadAll(resp.Body)
 		s.logger.Error("Python service error",
 			zap.Int("status_code", resp.StatusCode),
-			zap.String("response", string(body)))
+			zap.String("response", string(body)),
+			zap.Bool("is_rate_limit", isRateLimit))
 		c.JSON(resp.StatusCode, gin.H{
 			"error":      "Agent service error",
 			"error_code": errorCode,
 		})
 		return
 	}
+
+	// 流式响应开始成功，但成功状态在流完成后记录
 
 	// Set SSE headers (必须在写入响应体之前设置)
 	c.Header("Content-Type", "text/event-stream")
@@ -358,6 +455,8 @@ func (s *ChatService) HandleChatStream(c *gin.Context, req *infrastructure.ChatR
 	select {
 	case err := <-done:
 		if err != nil && err != io.EOF {
+			// 流式响应失败，记录失败
+			s.breakerManager.RecordFailure(userKey, agentID, false)
 			s.logger.Error("Error copying stream",
 				zap.Error(err),
 				zap.String("session_id", req.SessionID),
@@ -365,6 +464,8 @@ func (s *ChatService) HandleChatStream(c *gin.Context, req *infrastructure.ChatR
 				zap.Int("chunk_count", chunkCount),
 				zap.Duration("stream_duration", time.Since(streamStartTime)))
 		} else {
+			// 流式响应成功完成，记录成功
+			s.breakerManager.RecordSuccess(userKey, agentID)
 			s.logger.Info("Stream completed",
 				zap.String("session_id", req.SessionID),
 				zap.Int64("total_bytes", totalBytesRead),
@@ -372,6 +473,7 @@ func (s *ChatService) HandleChatStream(c *gin.Context, req *infrastructure.ChatR
 				zap.Duration("stream_duration", time.Since(streamStartTime)))
 		}
 	case <-c.Request.Context().Done():
+		// 客户端断开连接，不记录为失败（可能是正常取消）
 		s.logger.Warn("Client disconnected during streaming",
 			zap.String("session_id", req.SessionID),
 			zap.Int64("total_bytes", totalBytesRead),
@@ -381,7 +483,7 @@ func (s *ChatService) HandleChatStream(c *gin.Context, req *infrastructure.ChatR
 	}
 
 	// Add assistant message to session after streaming completes
-	if s.requestService.SessionService().IsAvailable() {
+	if s.requestService.SessionService().IsAvailable() && req.SessionID != "" {
 		// 保存收集到的完整响应内容
 		responseContent := fullResponseContent.String()
 		if responseContent == "" {
@@ -390,8 +492,11 @@ func (s *ChatService) HandleChatStream(c *gin.Context, req *infrastructure.ChatR
 		}
 		err = s.requestService.SessionService().AddMessage(req.SessionID, "assistant", responseContent, nil)
 		if err != nil {
-			s.logger.Error("Failed to add assistant message to session", zap.Error(err),
-				zap.String("session_id", req.SessionID))
+			// 会话不存在是预期行为（用户可能没有先创建会话），使用 Debug 级别
+			s.logger.Debug("Failed to add assistant message to session (session may not exist)",
+				zap.Error(err),
+				zap.String("session_id", req.SessionID),
+				zap.String("note", "This is expected if session was not created beforehand"))
 		} else {
 			s.logger.Debug("Saved assistant response to session",
 				zap.String("session_id", req.SessionID),

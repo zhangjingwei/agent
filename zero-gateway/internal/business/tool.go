@@ -36,7 +36,15 @@ func (s *ToolService) ListTools(c *gin.Context) {
 	s.logger.Debug("列出工具", zap.String("agent_id", agentID))
 
 	// Prepare request to Python service
-	pythonURL := s.httpClient.BuildURL(fmt.Sprintf("/agents/%s/tools", agentID))
+	pythonURL, err := s.httpClient.BuildURL(fmt.Sprintf("/agents/%s/tools", agentID))
+	if err != nil {
+		s.logger.Error("Failed to build Python service URL", zap.Error(err))
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":      "service unavailable",
+			"error_code": infrastructure.ErrCodeAgentServiceUnavailable,
+		})
+		return
+	}
 
 	// Create HTTP request
 	httpReq, err := http.NewRequestWithContext(

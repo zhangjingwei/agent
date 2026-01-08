@@ -56,17 +56,17 @@ func (r *RequestService) SessionService() *SessionService {
 func (r *RequestService) PrepareChatRequest(req *ChatRequest) ([]map[string]interface{}, string, error) {
 	// 获取会话历史
 	var messageHistory []map[string]interface{}
-	if r.sessionService.IsAvailable() {
+	if r.sessionService.IsAvailable() && req.SessionID != "" {
 		messages, err := r.sessionService.GetHistory(req.SessionID, nil)
 		if err != nil {
-			// 如果会话不存在，返回错误
+			// 如果会话不存在，记录警告但继续处理（使用空历史）
 			if session.IsSessionNotFound(err) {
-				r.logger.Warn("Session not found for chat", zap.String("session_id", req.SessionID))
-				return nil, "", fmt.Errorf("session not found: %w", err)
+				r.logger.Debug("Session not found, proceeding without history", zap.String("session_id", req.SessionID))
+			} else {
+				// 其他错误，记录但继续处理（可能只是临时性问题）
+				r.logger.Warn("Failed to get message history, proceeding without context", zap.Error(err),
+					zap.String("session_id", req.SessionID))
 			}
-			// 其他错误，记录但继续处理（可能只是临时性问题）
-			r.logger.Warn("Failed to get message history, proceeding without context", zap.Error(err),
-				zap.String("session_id", req.SessionID))
 		} else {
 			// 格式化消息历史
 			messageHistory = r.sessionService.FormatHistoryForRequest(messages)
@@ -79,10 +79,12 @@ func (r *RequestService) PrepareChatRequest(req *ChatRequest) ([]map[string]inte
 		}
 
 		// 添加当前用户消息到会话（统一处理，失败时记录警告但继续）
-		if err := r.sessionService.AddMessage(req.SessionID, "user", req.Message, req.Metadata); err != nil {
-			r.logger.Error("Failed to add user message to session", zap.Error(err),
-				zap.String("session_id", req.SessionID))
-			// 继续处理，不中断请求
+		if req.SessionID != "" {
+			if err := r.sessionService.AddMessage(req.SessionID, "user", req.Message, req.Metadata); err != nil {
+				r.logger.Debug("Failed to add user message to session (session may not exist)", zap.Error(err),
+					zap.String("session_id", req.SessionID))
+				// 继续处理，不中断请求
+			}
 		}
 	}
 
@@ -94,10 +96,17 @@ func (r *RequestService) PrepareChatRequest(req *ChatRequest) ([]map[string]inte
 			agentID = session.AgentID
 			r.logger.Info("从会话获取 agent_id", zap.String("agent_id", agentID), zap.String("session_id", req.SessionID))
 		} else {
+			// 会话不存在时，仍然使用默认 agent_id，不返回错误
 			r.logger.Info("会话不存在或未找到 agent_id，使用默认值", zap.String("session_id", req.SessionID), zap.String("default_agent_id", agentID), zap.Error(err))
 		}
 	} else {
 		r.logger.Info("会话管理器未初始化，使用默认 agent_id", zap.String("default_agent_id", agentID))
+	}
+
+	// 确保 agentID 不为空
+	if agentID == "" {
+		agentID = "zero"
+		r.logger.Warn("agent_id 为空，使用默认值", zap.String("default_agent_id", agentID))
 	}
 
 	return messageHistory, agentID, nil
@@ -111,7 +120,10 @@ func (r *RequestService) BuildPythonRequest(ctx context.Context, agentID string,
 		streamParam = "true"
 	}
 	path := fmt.Sprintf("/agents/%s/chat?stream=%s", agentID, streamParam)
-	pythonURL := r.httpClient.BuildURL(path)
+	pythonURL, err := r.httpClient.BuildURL(path)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to build URL: %w", err)
+	}
 
 	// 构建请求体
 	requestBody := map[string]interface{}{

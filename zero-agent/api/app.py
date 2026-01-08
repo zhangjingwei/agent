@@ -16,6 +16,7 @@ import structlog
 from core import ZeroAgentEngine
 from core.factory import AgentFactory
 from core.resource_manager import get_resource_manager, set_resource_manager, ResourceManager
+from core.service_registry import create_service_registry, get_service_registry
 from config.models import AgentConfig, ChatRequest
 from config.loader import ConfigLoader
 from filters import FilterManager, FilterMiddleware
@@ -33,9 +34,40 @@ from filters.builtin import (
 # 配置标准库日志（在 structlog 之前配置）
 log_level = os.getenv("LOG_LEVEL", "INFO").upper()
 numeric_level = getattr(logging, log_level, logging.INFO)
+
+# 配置日志文件输出
+log_file = os.getenv("LOG_FILE", None)
+log_dir = os.getenv("LOG_DIR", "logs")
+log_handlers = []
+
+if log_file:
+    # 如果指定了日志文件，创建目录并配置文件输出
+    from pathlib import Path
+    log_path = Path(log_file)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # 文件处理器（追加模式）
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setLevel(numeric_level)
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    log_handlers.append(file_handler)
+    
+    # 同时输出到控制台（可选）
+    if os.getenv("LOG_TO_CONSOLE", "true").lower() == "true":
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(numeric_level)
+        console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        log_handlers.append(console_handler)
+else:
+    # 默认只输出到控制台
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(numeric_level)
+    console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    log_handlers.append(console_handler)
+
 logging.basicConfig(
     level=numeric_level,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=log_handlers,
     force=True  # 强制重新配置，覆盖之前的配置
 )
 
@@ -79,10 +111,12 @@ async def lifespan(app: FastAPI):
         max_concurrent_requests = int(os.getenv("MAX_CONCURRENT_REQUESTS", "100"))
         max_concurrent_workflows = int(os.getenv("MAX_CONCURRENT_WORKFLOWS", "50"))
         max_concurrent_tools = int(os.getenv("MAX_CONCURRENT_TOOLS", "20"))
+        thread_pool_size = int(os.getenv("THREAD_POOL_SIZE", "20"))  # 线程池大小
         resource_manager = ResourceManager(
             max_concurrent_requests=max_concurrent_requests,
             max_concurrent_workflows=max_concurrent_workflows,
-            max_concurrent_tools=max_concurrent_tools
+            max_concurrent_tools=max_concurrent_tools,
+            thread_pool_size=thread_pool_size
         )
         set_resource_manager(resource_manager)
         logger.info("Resource manager initialized")
@@ -122,6 +156,27 @@ async def lifespan(app: FastAPI):
             register_filters_from_config(filter_manager, config, logger)
 
         logger.info("Agents and filters initialized successfully")
+        
+        # 注册服务到 Redis（如果配置了 Redis）
+        redis_host = os.getenv("REDIS_HOST")
+        if redis_host:
+            try:
+                service_registry = create_service_registry(
+                    redis_host=redis_host,
+                    redis_port=int(os.getenv("REDIS_PORT", "6379")),
+                    redis_password=os.getenv("REDIS_PASSWORD", None),
+                    service_name="zero-agent",
+                    port=int(os.getenv("API_PORT", "8082"))
+                )
+                registered = await service_registry.register()
+                if registered:
+                    logger.info("Service registered to Redis for service discovery")
+                else:
+                    logger.warning("Failed to register service to Redis, continuing without service discovery")
+            except Exception as e:
+                logger.warning(f"Service registration failed: {e}, continuing without service discovery")
+        else:
+            logger.info("Redis not configured, skipping service registration")
 
     except Exception as e:
         logger.error("Failed to initialize agents", error=str(e), exc_info=True)
@@ -132,6 +187,17 @@ async def lifespan(app: FastAPI):
     # 应用关闭时的清理
     if agent_factory:
         await agent_factory.cleanup_all()
+    
+    # 注销服务（优雅下线）
+    service_registry = get_service_registry()
+    if service_registry:
+        await service_registry.unregister()
+        logger.info("Service unregistered from Redis")
+    
+    # 关闭资源管理器（包括线程池）
+    resource_manager = get_resource_manager()
+    if resource_manager:
+        resource_manager.shutdown(wait=True)
 
     logger.info("Shutting down Universal Agent MVP")
 
@@ -438,8 +504,25 @@ def _start_server():
     config = Config()
     config.bind = [f"{host}:{port}"]
     config.loglevel = log_level.upper()
-    config.accesslog = "-"
-    config.errorlog = "-"
+    
+    # 配置 Hypercorn 日志输出
+    log_file = os.getenv("LOG_FILE", None)
+    if log_file:
+        # 如果指定了日志文件，Hypercorn 也输出到文件
+        # accesslog 记录 HTTP 访问日志
+        access_log_file = os.getenv("ACCESS_LOG_FILE", log_file.replace(".log", "_access.log") if log_file.endswith(".log") else f"{log_file}_access")
+        config.accesslog = access_log_file
+        
+        # errorlog 输出到 stderr，不单独创建文件
+        # 原因：Hypercorn 的 errorlog 会记录服务器启动信息（如 "Running on..."），
+        # 这些信息不是错误，应该通过应用日志系统记录（已在第524行记录）
+        # 真正的服务器错误会通过应用日志系统记录到主日志文件
+        config.errorlog = "-"
+    else:
+        # 默认输出到 stdout/stderr
+        config.accesslog = "-"
+        config.errorlog = "-"
+    
     config.use_reloader = False
     
     logger.info(f"Starting server with Hypercorn (HTTP/2 support) on {host}:{port}")

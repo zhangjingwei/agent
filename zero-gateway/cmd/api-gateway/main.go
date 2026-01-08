@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/gin-contrib/requestid"
 	"github.com/redis/go-redis/v9"
@@ -20,6 +22,8 @@ import (
 
 	"zero-gateway/internal/api"
 	"zero-gateway/internal/config"
+	"zero-gateway/internal/infrastructure"
+	"zero-gateway/pkg/cache"
 	"zero-gateway/pkg/filters"
 	"zero-gateway/pkg/filters/builtin"
 	"zero-gateway/pkg/middleware"
@@ -32,13 +36,88 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	// Initialize logger
+	// Initialize logger with file output support
 	var logger *zap.Logger
-	if cfg.Logging.Format == "json" {
-		logger, _ = zap.NewProduction()
+	var logErr error
+
+	if cfg.Logging.OutputFile != "" {
+		// 配置日志文件输出
+		// 构建日志文件路径
+		logFile := cfg.Logging.OutputFile
+		if filepath.IsAbs(logFile) {
+			// 绝对路径：确保父目录存在
+			logDir := filepath.Dir(logFile)
+			if err := os.MkdirAll(logDir, 0755); err != nil {
+				log.Fatalf("Failed to create log directory: %v", err)
+			}
+		} else {
+			// 相对路径：检查是否包含目录
+			logDir := cfg.Logging.LogDir
+			if logDir == "" {
+				logDir = "logs" // 默认目录
+			}
+
+			// 如果 logFile 已经包含目录（如 logs/gateway.log），使用其父目录
+			// 如果 logFile 只是文件名（如 gateway.log），放在 logDir 下
+			if filepath.Dir(logFile) != "." {
+				// logFile 包含目录，确保其父目录存在
+				logDir = filepath.Dir(logFile)
+				if err := os.MkdirAll(logDir, 0755); err != nil {
+					log.Fatalf("Failed to create log directory: %v", err)
+				}
+				// logFile 已经是完整路径，不需要修改
+			} else {
+				// logFile 只是文件名，放在 logDir 下
+				if err := os.MkdirAll(logDir, 0755); err != nil {
+					log.Fatalf("Failed to create log directory: %v", err)
+				}
+				logFile = filepath.Join(logDir, logFile)
+			}
+		}
+
+		// 创建日志文件
+		file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		if err != nil {
+			log.Fatalf("Failed to open log file: %v", err)
+		}
+
+		// 配置 zap logger 输出到文件
+		encoderConfig := zap.NewProductionEncoderConfig()
+		if cfg.Logging.Format != "json" {
+			encoderConfig = zap.NewDevelopmentEncoderConfig()
+		}
+
+		encoder := zapcore.NewJSONEncoder(encoderConfig)
+		if cfg.Logging.Format != "json" {
+			encoder = zapcore.NewConsoleEncoder(encoderConfig)
+		}
+
+		core := zapcore.NewCore(encoder, zapcore.AddSync(file), getLogLevel(cfg.Logging.Level))
+
+		// 如果配置了同时输出到控制台
+		if os.Getenv("LOG_TO_CONSOLE") != "false" {
+			consoleCore := zapcore.NewCore(
+				encoder,
+				zapcore.AddSync(os.Stderr),
+				getLogLevel(cfg.Logging.Level),
+			)
+			core = zapcore.NewTee(core, consoleCore)
+		}
+
+		logger = zap.New(core, zap.AddCaller(), zap.AddStacktrace(zap.ErrorLevel))
+		log.Printf("Logging to file: %s", logFile)
 	} else {
-		logger, _ = zap.NewDevelopment()
+		// 默认输出到 stderr
+		if cfg.Logging.Format == "json" {
+			logger, logErr = zap.NewProduction()
+		} else {
+			logger, logErr = zap.NewDevelopment()
+		}
+		if logErr != nil {
+			log.Fatalf("Failed to initialize logger: %v", logErr)
+		}
 	}
+
 	defer logger.Sync()
 
 	// Set Gin mode
@@ -68,8 +147,37 @@ func main() {
 	filterMiddleware := filters.NewFilterMiddleware(filterManager)
 	r.Use(filterMiddleware.Handler())
 
+	// 初始化 Redis 缓存（用于服务发现和会话管理）
+	var redisCache *cache.RedisCache
+	var serviceDiscoveryClient *infrastructure.ServiceDiscoveryClient
+
+	if cfg.Python.UseServiceDiscovery {
+		var err error
+		redisCache, err = cache.NewRedisCache(
+			cfg.Redis.Host,
+			cfg.Redis.Port,
+			cfg.Redis.Password,
+			cfg.Redis.DB,
+			cfg.Redis.PoolSize,
+		)
+		if err != nil {
+			logger.Fatal("Failed to connect to Redis for service discovery", zap.Error(err))
+		}
+
+		// 创建服务发现和负载均衡器（使用 go-kit）
+		serviceDiscovery := cache.NewServiceDiscovery(redisCache)
+		redisInstancer := cache.NewRedisInstancer(serviceDiscovery, cfg.Python.ServiceName, logger)
+		serviceDiscoveryClient = infrastructure.NewServiceDiscoveryClient(redisInstancer, cfg, logger)
+		logger.Info("Service discovery enabled",
+			zap.String("service_name", cfg.Python.ServiceName),
+			zap.String("strategy", cfg.Python.LoadBalanceStrategy),
+		)
+	} else {
+		logger.Info("Service discovery disabled, using static configuration")
+	}
+
 	// 初始化API处理器
-	apiHandler := api.NewHandler(cfg, logger)
+	apiHandler := api.NewHandler(cfg, logger, serviceDiscoveryClient)
 
 	// 设置路由
 	api.SetupRoutes(r, apiHandler)
@@ -104,6 +212,12 @@ func main() {
 
 	logger.Info("Shutting down server...")
 
+	// 停止服务发现客户端
+	if serviceDiscoveryClient != nil {
+		serviceDiscoveryClient.Stop()
+		logger.Info("Service discovery client stopped")
+	}
+
 	// 给未完成的请求30秒时间完成
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -113,6 +227,24 @@ func main() {
 	}
 
 	logger.Info("Server exited")
+}
+
+// getLogLevel 将字符串日志级别转换为 zapcore.Level
+func getLogLevel(level string) zapcore.Level {
+	switch level {
+	case "debug":
+		return zapcore.DebugLevel
+	case "info":
+		return zapcore.InfoLevel
+	case "warn":
+		return zapcore.WarnLevel
+	case "error":
+		return zapcore.ErrorLevel
+	case "fatal":
+		return zapcore.FatalLevel
+	default:
+		return zapcore.InfoLevel
+	}
 }
 
 // registerBuiltinFilters 注册内置过滤器

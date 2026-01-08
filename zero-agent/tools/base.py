@@ -96,12 +96,15 @@ class FunctionTool(Tool):
         if asyncio.iscoroutinefunction(self.func):
             return await self.func(**kwargs)
         else:
-            # 对于同步函数，在线程池中运行
-            import concurrent.futures
+            # 对于同步函数，使用共享线程池运行
             import functools
+            from core.resource_manager import get_resource_manager
 
+            # 获取全局资源管理器的共享线程池
+            resource_manager = get_resource_manager()
+            thread_pool = resource_manager.thread_pool
+            
             loop = asyncio.get_event_loop()
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                # 使用functools.partial来处理关键字参数
-                func_with_args = functools.partial(self.func, **kwargs)
-                return await loop.run_in_executor(executor, func_with_args)
+            # 使用共享线程池，而不是每次创建新的
+            func_with_args = functools.partial(self.func, **kwargs)
+            return await loop.run_in_executor(thread_pool, func_with_args)

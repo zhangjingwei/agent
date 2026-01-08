@@ -4,6 +4,7 @@
 
 import asyncio
 import logging
+import concurrent.futures
 from typing import Optional
 from contextlib import asynccontextmanager
 
@@ -17,7 +18,8 @@ class ResourceManager:
         self,
         max_concurrent_requests: int = 100,
         max_concurrent_workflows: int = 50,
-        max_concurrent_tools: int = 20
+        max_concurrent_tools: int = 20,
+        thread_pool_size: int = 20
     ):
         """
         初始化资源管理器
@@ -26,20 +28,40 @@ class ResourceManager:
             max_concurrent_requests: 最大并发请求数
             max_concurrent_workflows: 最大并发工作流数
             max_concurrent_tools: 全局最大并发工具数
+            thread_pool_size: 线程池大小，用于执行同步工具函数
         """
         self._request_semaphore = asyncio.Semaphore(max_concurrent_requests)
         self._workflow_semaphore = asyncio.Semaphore(max_concurrent_workflows)
         self._global_tool_semaphore = asyncio.Semaphore(max_concurrent_tools)
         
+        # 创建共享线程池，用于执行同步工具函数
+        self._thread_pool = concurrent.futures.ThreadPoolExecutor(
+            max_workers=thread_pool_size,
+            thread_name_prefix="tool-executor"
+        )
+        
         self.max_concurrent_requests = max_concurrent_requests
         self.max_concurrent_workflows = max_concurrent_workflows
         self.max_concurrent_tools = max_concurrent_tools
+        self.thread_pool_size = thread_pool_size
         
         logger.info(
             f"资源管理器初始化: 最大并发请求={max_concurrent_requests}, "
             f"最大并发工作流={max_concurrent_workflows}, "
-            f"最大并发工具={max_concurrent_tools}"
+            f"最大并发工具={max_concurrent_tools}, "
+            f"线程池大小={thread_pool_size}"
         )
+    
+    @property
+    def thread_pool(self) -> concurrent.futures.ThreadPoolExecutor:
+        """获取共享线程池"""
+        return self._thread_pool
+    
+    def shutdown(self, wait: bool = True):
+        """关闭资源管理器，清理线程池"""
+        if self._thread_pool:
+            self._thread_pool.shutdown(wait=wait)
+            logger.info("线程池已关闭")
     
     @asynccontextmanager
     async def acquire_request(self):
@@ -74,6 +96,7 @@ class ResourceManager:
             "max_concurrent_requests": self.max_concurrent_requests,
             "max_concurrent_workflows": self.max_concurrent_workflows,
             "max_concurrent_tools": self.max_concurrent_tools,
+            "thread_pool_size": self.thread_pool_size,
             "available_requests": self._request_semaphore._value,
             "available_workflows": self._workflow_semaphore._value,
             "available_tools": self._global_tool_semaphore._value,

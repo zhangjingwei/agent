@@ -24,6 +24,7 @@ pyyaml>=6.0
 # 工具库
 python-dotenv>=1.0.0
 structlog>=23.2.0
+redis>=5.0.0  # Redis 客户端，用于服务注册和发现
 
 # 开发依赖 (可选)
 pytest>=7.4.0

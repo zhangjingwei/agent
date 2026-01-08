@@ -7,6 +7,8 @@ toolchain go1.24.11
 require (
 	github.com/gin-contrib/requestid v1.0.5
 	github.com/gin-gonic/gin v1.11.0
+	github.com/go-kit/kit v0.13.0
+	github.com/go-kit/log v0.2.0
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/google/uuid v1.6.0
 	github.com/spf13/viper v1.21.0
@@ -15,6 +17,7 @@ require (
 )
 
 require (
+	github.com/go-logfmt/logfmt v0.5.1 // indirect
 	go.uber.org/mock v0.6.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )

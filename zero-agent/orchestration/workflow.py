@@ -5,6 +5,7 @@
 import time
 import logging
 import asyncio
+import random
 from typing import Dict, Any, AsyncIterator, Optional, Tuple
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
 from langgraph.graph import StateGraph, END
@@ -15,6 +16,7 @@ from tools.executor import ToolExecutor
 from config.models import StreamChunk
 from langchain_core.runnables import Runnable, RunnableLambda
 from core.resource_manager import get_resource_manager
+from core.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,17 @@ class WorkflowManager:
         self._workflow_timeout = 300  # 工作流总体超时（秒）
         # 并发控制配置
         self._max_concurrent_tools = 5  # 最大并发工具数
+        # 速率限制和熔断配置
+        self._max_retry_attempts = 3  # 最大重试次数（针对429错误）
+        self._base_retry_delay = 1.0  # 基础重试延迟（秒）
+        self._max_retry_delay = 60.0  # 最大重试延迟（秒）
+        # 创建LLM熔断器
+        self._llm_circuit_breaker = CircuitBreaker(
+            failure_threshold=5,  # 连续5次失败后熔断
+            success_threshold=2,  # 半开状态下2次成功恢复
+            timeout=60.0,  # 熔断60秒后尝试恢复
+            name="llm_provider"
+        )
 
     def _create_graph(self) -> StateGraph:
         """创建LangGraph状态图"""
@@ -69,8 +82,56 @@ class WorkflowManager:
         state["processing_time"] = time.time()
         return state
 
+    def _is_rate_limit_error(self, error: Exception) -> Tuple[bool, Optional[float]]:
+        """检查是否为速率限制错误，并提取重试等待时间
+        
+        Returns:
+            (is_rate_limit, retry_after): 是否为速率限制错误，以及建议的重试等待时间（秒）
+        """
+        error_str = str(error)
+        
+        # 检查错误消息中是否包含速率限制相关信息
+        rate_limit_indicators = [
+            '429',
+            'rate limit',
+            'rate limiting',
+            'RPM limit',
+            'TPM limit',
+            'quota',
+            'too many requests'
+        ]
+        
+        is_rate_limit = any(indicator.lower() in error_str.lower() for indicator in rate_limit_indicators)
+        
+        # 尝试从错误对象中提取 retry_after 信息
+        retry_after = None
+        if hasattr(error, 'response'):
+            # OpenAI SDK 的错误对象可能有 response 属性
+            response = getattr(error, 'response', None)
+            if response:
+                # 检查响应头中的 retry-after
+                if hasattr(response, 'headers'):
+                    retry_after_header = response.headers.get('retry-after')
+                    if retry_after_header:
+                        try:
+                            retry_after = float(retry_after_header)
+                        except (ValueError, TypeError):
+                            pass
+                # 检查响应体中的 retry_after
+                if retry_after is None and hasattr(response, 'json'):
+                    try:
+                        error_body = response.json()
+                        if isinstance(error_body, dict):
+                            retry_after = error_body.get('retry_after') or error_body.get('retryAfter')
+                            if retry_after:
+                                retry_after = float(retry_after)
+                    except Exception:
+                        pass
+        
+        return is_rate_limit, retry_after
+
     async def _call_llm(self, state: AgentState) -> AgentState:
-        """调用LLM节点（异步）"""
+        """调用LLM节点（异步，支持速率限制重试和熔断保护）"""
         try:
             # 这里需要注入LLM实例，稍后在OrchestratorAgent中设置
             llm_with_tools = getattr(self, '_llm_with_tools', None)
@@ -82,20 +143,89 @@ class WorkflowManager:
             logger.info(f"LLM调用 - 迭代 {iteration + 1}/{state['max_iterations']}, 消息数: {message_count}")
             logger.debug(f"发送给LLM的消息: {[msg.__class__.__name__ for msg in state['messages']]}")
             
-            # 获取 LLM 超时配置（默认 60 秒）
-            llm_timeout = getattr(self, '_llm_timeout', 60)
+            # 检查熔断器状态
+            circuit_state = self._llm_circuit_breaker.get_state()
+            if circuit_state.value == "open":
+                error_msg = "LLM服务已熔断，请求被拒绝"
+                logger.error(error_msg)
+                state["errors"].append(error_msg)
+                raise CircuitBreakerOpenError(error_msg)
             
-            # 使用异步方法，避免阻塞事件循环，添加超时控制
-            try:
-                response = await asyncio.wait_for(
+            # 获取配置
+            llm_timeout = getattr(self, '_llm_timeout', 60)
+            max_retry_attempts = getattr(self, '_max_retry_attempts', 3)
+            base_retry_delay = getattr(self, '_base_retry_delay', 1.0)
+            max_retry_delay = getattr(self, '_max_retry_delay', 60.0)
+            
+            # 定义实际的LLM调用函数
+            async def _invoke_llm():
+                return await asyncio.wait_for(
                     llm_with_tools.ainvoke(state["messages"]),
                     timeout=llm_timeout
                 )
-            except asyncio.TimeoutError:
-                error_msg = f"LLM调用超时（超过 {llm_timeout} 秒）"
-                logger.error(error_msg)
-                state["errors"].append(error_msg)
-                raise TimeoutError(error_msg)
+            
+            # 重试循环（针对429错误）
+            # 注意：熔断器会在每次调用时自动记录成功/失败
+            last_error = None
+            response = None
+            
+            for attempt in range(max_retry_attempts + 1):
+                try:
+                    # 通过熔断器调用（会自动记录成功/失败）
+                    response = await self._llm_circuit_breaker.call_async(_invoke_llm)
+                    # 成功获取响应，跳出重试循环
+                    break
+                    
+                except CircuitBreakerOpenError:
+                    # 熔断器已打开，直接抛出
+                    error_msg = "LLM服务已熔断，请求被拒绝"
+                    logger.error(error_msg)
+                    state["errors"].append(error_msg)
+                    raise
+                    
+                except asyncio.TimeoutError:
+                    # 超时错误，熔断器已自动记录失败
+                    error_msg = f"LLM调用超时（超过 {llm_timeout} 秒）"
+                    logger.error(error_msg)
+                    state["errors"].append(error_msg)
+                    raise TimeoutError(error_msg)
+                    
+                except Exception as e:
+                    last_error = e
+                    is_rate_limit, retry_after = self._is_rate_limit_error(e)
+                    
+                    # 如果是速率限制错误且还有重试机会，则重试
+                    if is_rate_limit and attempt < max_retry_attempts:
+                        # 计算重试延迟（指数退避 + 抖动）
+                        if retry_after:
+                            # 使用 API 建议的重试时间
+                            delay = min(float(retry_after), max_retry_delay)
+                        else:
+                            # 指数退避：base_delay * (2 ^ attempt) + 随机抖动
+                            delay = min(
+                                base_retry_delay * (2 ** attempt) + random.uniform(0, 1),
+                                max_retry_delay
+                            )
+                        
+                        logger.warning(
+                            f"LLM调用遇到速率限制（429），第 {attempt + 1}/{max_retry_attempts} 次重试，"
+                            f"等待 {delay:.2f} 秒后重试。错误: {str(e)}"
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    else:
+                        # 不是速率限制错误，或者已达到最大重试次数
+                        # 熔断器已自动记录失败（通过call_async）
+                        if is_rate_limit:
+                            logger.error(
+                                f"LLM速率限制重试失败，已达到最大重试次数 {max_retry_attempts}，"
+                                f"熔断器状态: {self._llm_circuit_breaker.get_state().value}"
+                            )
+                        raise
+            
+            # 如果所有重试都失败，抛出最后一个错误
+            if last_error and response is None:
+                raise last_error
             
             logger.debug(f"LLM响应类型: {type(response).__name__}, 内容长度: {len(response.content) if hasattr(response, 'content') else 0}")
 
@@ -314,6 +444,54 @@ class WorkflowManager:
         """设置并发控制配置"""
         if max_concurrent_tools is not None:
             self._max_concurrent_tools = max_concurrent_tools
+
+    def set_retry_config(
+        self,
+        max_retry_attempts: int = None,
+        base_retry_delay: float = None,
+        max_retry_delay: float = None
+    ):
+        """设置速率限制重试配置
+        
+        Args:
+            max_retry_attempts: 最大重试次数（默认 3）
+            base_retry_delay: 基础重试延迟，秒（默认 1.0）
+            max_retry_delay: 最大重试延迟，秒（默认 60.0）
+        """
+        if max_retry_attempts is not None:
+            self._max_retry_attempts = max_retry_attempts
+        if base_retry_delay is not None:
+            self._base_retry_delay = base_retry_delay
+        if max_retry_delay is not None:
+            self._max_retry_delay = max_retry_delay
+
+    def set_circuit_breaker_config(
+        self,
+        failure_threshold: int = None,
+        success_threshold: int = None,
+        timeout: float = None
+    ):
+        """设置熔断器配置
+        
+        Args:
+            failure_threshold: 触发熔断的连续失败次数（默认 5）
+            success_threshold: 半开状态下需要连续成功的次数（默认 2）
+            timeout: 熔断持续时间，秒（默认 60.0）
+        """
+        if failure_threshold is not None:
+            self._llm_circuit_breaker.failure_threshold = failure_threshold
+        if success_threshold is not None:
+            self._llm_circuit_breaker.success_threshold = success_threshold
+        if timeout is not None:
+            self._llm_circuit_breaker.timeout = timeout
+
+    def get_circuit_breaker_stats(self) -> dict:
+        """获取熔断器统计信息"""
+        return self._llm_circuit_breaker.get_stats()
+
+    def reset_circuit_breaker(self):
+        """手动重置熔断器"""
+        self._llm_circuit_breaker.reset()
 
     async def execute(self, initial_state: AgentState, config: Dict[str, Any]) -> AgentState:
         """执行工作流（带总体超时控制）"""
