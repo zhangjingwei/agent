@@ -536,6 +536,8 @@ class WorkflowManager:
             workflow_start_time = time.time()
 
             # 流式执行，在循环中检查超时
+            # 注意：astream_events 的 version="v2" 是当前推荐的稳定版本（v1已弃用）
+            # 虽然会显示 beta 警告，但这是 LangChain 的正常提示，可以安全使用
             async for event in self.graph.astream_events(initial_state, config, version="v2"):
                 # 检查总体超时
                 elapsed = time.time() - workflow_start_time
