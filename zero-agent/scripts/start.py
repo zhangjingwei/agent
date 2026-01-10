@@ -85,7 +85,7 @@ def main():
         import asyncio
         from hypercorn.asyncio import serve
         from hypercorn.config import Config
-        from api import app
+        from api.app import app
 
         # 配置hypercorn支持HTTP/2 (h2c - HTTP/2 over cleartext)
         config = Config()
