@@ -4,6 +4,8 @@
 
 import importlib
 import logging
+import asyncio
+import time
 from typing import Dict, Any, Optional
 
 from .base import Tool, FunctionTool
@@ -115,33 +117,73 @@ class ToolManager:
                 # 可以选择继续注册其他工具，或者抛出异常
                 # 这里选择继续，以免一个工具失败影响其他工具
 
+    def _build_mcp_summary(
+        self,
+        enabled_servers: int,
+        success_servers: int,
+        failed_servers: int,
+        registered_tools: int,
+        failed_server_ids: list[str]
+    ) -> Dict[str, Any]:
+        """构建 MCP 初始化摘要。"""
+        return {
+            "enabled_servers": enabled_servers,
+            "success_servers": success_servers,
+            "failed_servers": failed_servers,
+            "registered_tools": registered_tools,
+            "failed_server_ids": failed_server_ids,
+        }
+
+    async def _cleanup_failed_mcp_client(self, server_id: str, client: Optional[MCPClient], stage: str):
+        """在 MCP 初始化失败时尽力清理客户端资源。"""
+        if client is None:
+            return
+
+        try:
+            await client.disconnect()
+        except Exception:
+            logger.debug(f"{stage}后清理 MCP 客户端失败 {server_id}", exc_info=True)
+        finally:
+            self._mcp_clients.pop(server_id, None)
+
     async def register_mcp_tools(self, registry: ToolRegistry,
                                 mcp_configs: list[MCPConfig],
-                                mcp_tool_configs: list[MCPToolConfig]):
+                                mcp_tool_configs: list[MCPToolConfig]) -> Dict[str, Any]:
         """
-        注册MCP工具
+        注册MCP工具（优化：并行初始化多个 MCP 服务器）
 
         Args:
             registry: 工具注册器
             mcp_configs: MCP服务器配置列表
             mcp_tool_configs: MCP工具配置列表
         """
-        for config in mcp_configs:
-            if not config.enabled:
-                logger.info(f"跳过禁用的MCP服务器: {config.name}")
-                continue
+        enabled_configs = [config for config in mcp_configs if config.enabled]
+        if not enabled_configs:
+            logger.info("没有启用的 MCP 服务器，跳过注册")
+            return self._build_mcp_summary(0, 0, 0, 0, [])
+        
+        enabled_server_count = len(enabled_configs)
+        logger.info(f"开始并行初始化 {enabled_server_count} 个 MCP 服务器")
+        start_time = time.time()
+        
+        async def init_mcp_server(config: MCPConfig) -> tuple[str, Optional[int], Optional[str]]:
+            """初始化单个 MCP 服务器，返回 (server_id, registered_count, error_message)。"""
+            server_timeout_seconds = max(3.0, float(config.timeout) / 1000.0 + 2.0)
+            client: Optional[MCPClient] = None
 
-            try:
+            async def _initialize_server() -> tuple[str, Optional[int], Optional[str]]:
                 # 创建并连接MCP客户端
+                nonlocal client
                 client = MCPClient(config)
                 await client.connect()
-                self._mcp_clients[config.id] = client
 
                 # 获取工具列表
                 tools = await client.list_tools()
-                logger.info(f"MCP服务器 {config.id} 提供 {len(tools)} 个工具")
+                tool_count = len(tools)
+                logger.info(f"MCP服务器 {config.id} 初始化成功，提供 {tool_count} 个工具")
 
                 # 为每个工具创建包装器并注册
+                registered_count = 0
                 for tool_info in tools:
                     tool_config = self._find_mcp_tool_config(
                         mcp_tool_configs, config.id, tool_info['name']
@@ -161,15 +203,92 @@ class ToolManager:
 
                         # 注册到工具注册器
                         registry.register(mcp_tool)
+                        registered_count += 1
                         logger.info(f"成功注册MCP工具: {mcp_tool.name}")
 
                     except Exception as e:
                         logger.error(f"注册MCP工具失败 {config.id}.{tool_info['name']}: {str(e)}")
                         # 继续注册其他工具
 
+                if registered_count == 0:
+                    logger.warning(f"MCP服务器 {config.id} 未注册任何工具，将以降级模式继续运行")
+
+                # 只有完成初始化后才纳入可清理客户端集合
+                self._mcp_clients[config.id] = client
+                return (config.id, registered_count, None)
+
+            try:
+                return await asyncio.wait_for(_initialize_server(), timeout=server_timeout_seconds)
+            except asyncio.TimeoutError:
+                await self._cleanup_failed_mcp_client(config.id, client, "超时")
+                error_msg = (
+                    f"初始化超时（>{server_timeout_seconds:.1f}s）"
+                )
+                logger.error(f"连接MCP服务器失败 {config.id}: {error_msg}")
+                logger.warning(f"MCP服务器 {config.id} 的工具将不可用，请检查服务器配置或网络连接")
+                return (config.id, None, error_msg)
             except Exception as e:
+                await self._cleanup_failed_mcp_client(config.id, client, "异常")
                 logger.error(f"连接MCP服务器失败 {config.id}: {str(e)}")
                 logger.warning(f"MCP服务器 {config.id} 的工具将不可用，请检查服务器配置或网络连接")
+                return (config.id, None, str(e))
+        
+        # 并行执行所有初始化任务
+        try:
+            results = await asyncio.gather(
+                *[init_mcp_server(config) for config in enabled_configs],
+                return_exceptions=True
+            )
+            
+            # 统计结果（过滤掉 CancelledError）
+            valid_results = [r for r in results if not isinstance(r, asyncio.CancelledError)]
+            success_count = sum(1 for r in valid_results if isinstance(r, tuple) and r[2] is None)
+            fail_count = len(valid_results) - success_count
+            total_tools = sum(r[1] for r in valid_results if isinstance(r, tuple) and r[1] is not None)
+            failed_server_ids = [
+                r[0] for r in valid_results if isinstance(r, tuple) and r[2] is not None
+            ]
+            
+            # 检查是否有 CancelledError
+            cancelled_count = sum(1 for r in results if isinstance(r, asyncio.CancelledError))
+            if cancelled_count > 0:
+                logger.warning(f"{cancelled_count} 个 MCP 服务器初始化被取消")
+            
+            elapsed_time = time.time() - start_time
+            logger.info(f"MCP 服务器初始化完成: {success_count} 成功, {fail_count} 失败, 注册 {total_tools} 个工具, 耗时: {elapsed_time:.2f}秒")
+            if failed_server_ids:
+                logger.warning(
+                    "MCP降级运行，以下服务器不可用: %s",
+                    ", ".join(failed_server_ids)
+                )
+            return self._build_mcp_summary(
+                enabled_servers=enabled_server_count,
+                success_servers=success_count,
+                failed_servers=fail_count,
+                registered_tools=total_tools,
+                failed_server_ids=failed_server_ids,
+            )
+            
+        except asyncio.CancelledError:
+            logger.warning("MCP 服务器初始化被取消，继续执行")
+            failed_server_ids = [config.id for config in enabled_configs]
+            return self._build_mcp_summary(
+                enabled_servers=enabled_server_count,
+                success_servers=0,
+                failed_servers=enabled_server_count,
+                registered_tools=0,
+                failed_server_ids=failed_server_ids,
+            )
+        except Exception as e:
+            logger.error(f"MCP 服务器并行初始化过程中出错: {str(e)}", exc_info=True)
+            failed_server_ids = [config.id for config in enabled_configs]
+            return self._build_mcp_summary(
+                enabled_servers=enabled_server_count,
+                success_servers=0,
+                failed_servers=enabled_server_count,
+                registered_tools=0,
+                failed_server_ids=failed_server_ids,
+            )
 
 
 

@@ -43,15 +43,16 @@ mcp_servers:
   # npx @modelcontextprotocol/inspector uvx mcp-caiyun-weather
   - id: caiyun-weather
     name: 彩云天气
-    description: 提供中国天气预报服务
+    description: 提供中国天气预报服务（已下线，用于测试错误处理）
     command: uvx
     args:
       - mcp-caiyun-weather
     env:
-      CAIYUN_WEATHER_API_TOKEN: ${CAIYUN_WEATHER_API_TOKEN:huE0COxlM2CCc2ES}
-    enabled: true
-    timeout: 30000
+      CAIYUN_WEATHER_API_TOKEN: ${CAIYUN_WEATHER_API_TOKEN:}
+    enabled: true  # 启用以测试连接失败处理
+    timeout: 10000  # 缩短超时时间到10秒，快速失败
   # 可以添加更多MCP服务器
+  # 文件系统 MCP 服务器（用于测试）
   # - id: filesystem
   #   name: 文件系统工具
   #   description: 提供文件系统操作工具
@@ -59,8 +60,9 @@ mcp_servers:
   #   args:
   #     - -y
   #     - "@modelcontextprotocol/server-filesystem"
-  #     - "/tmp"
-  #   enabled: true
+  #     - "/tmp"  # 限制在 /tmp 目录
+  #   enabled: false  # 需要时启用
+  #   timeout: 10000
 
 # MCP 工具配置（可选，用于自定义配置）
 mcp_tools: []
@@ -69,6 +71,24 @@ mcp_tools: []
   #   tool_name: get_realtime_weather
   #   enabled: true
   #   description_override: "获取指定位置的实时天气信息"
+
+# Skill 配置
+# metadata, full, resources 区别使用不同加载级别
+# metadata 只加载元数据，full 加载完整内容，resources 加载所有资源
+skills:
+  - id: test_skill
+    name: 测试技能
+    path: skills/examples/test_skill
+    enabled: true
+    load_level: metadata
+    priority: 50  # 较高优先级，确保优先加载用于测试
+  
+  - id: data_analysis
+    name: 数据分析
+    path: skills/examples/data_analysis
+    enabled: true
+    load_level: resources
+    priority: 100
 
 # Function Call 配置
 function_call:
