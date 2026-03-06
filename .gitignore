@@ -260,3 +260,7 @@ config.local.yaml
 *.secret
 credentials.json
 *.credentials
+.venv/
+*/.venv/
+**/.venv/
+**/venv/
