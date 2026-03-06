@@ -1,5 +1,7 @@
 # Zero Agent
 
+**语言**: 简体中文 | [English](README.en.md)
+
 面向生产落地的 AI Agent 系统，采用 Go 网关 + Python Agent 核心的微服务架构，聚焦可扩展编排、工具生态接入与稳定性保障。
 
 ## 项目定位
