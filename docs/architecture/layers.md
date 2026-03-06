@@ -390,7 +390,7 @@ class UniversalAgent:
 
 ```python
 app = FastAPI(
-    title="Universal Agent MVP",
+    title="Zero Agent",
     description="基于LangGraph的通用AI Agent",
     version="0.1.0"
 )

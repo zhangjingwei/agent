@@ -80,7 +80,7 @@ MCP 服务在 FastAPI 应用启动时就会初始化，确保：
 ### 启动日志示例
 
 ```bash
-INFO - Starting Universal Agent MVP
+INFO - Starting Zero Agent Service
 ERROR - 连接MCP服务器失败 caiyun-weather: [Errno 2] No such file or directory: 'uvx'
 WARNING - MCP服务器 caiyun-weather 的工具将不可用，请检查服务器配置或网络连接
 INFO - Agent initialized successfully

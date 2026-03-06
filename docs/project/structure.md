@@ -1,9 +1,9 @@
 # 项目结构
 
-基于分层架构设计，Universal Agent MVP 的项目结构如下：
+基于分层架构设计，Zero Agent 的项目结构如下：
 
 ```
-agent-mvp/
+zero-agent/
 ├── llm/                    # 🧠 LLM层
 │   ├── __init__.py
 │   ├── base.py            # LLM提供商基础接口
@@ -62,7 +62,6 @@ agent-mvp/
 │   │   └── deployment.md
 │   └── project/
 │       ├── structure.md
-│       ├── roadmap.md
 │       └── contributing.md
 ├── demo.py                 # 🎬 演示脚本
 ├── pyproject.toml          # 📦 项目配置

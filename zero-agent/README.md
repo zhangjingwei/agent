@@ -1,9 +1,18 @@
 # Zero Agent
 
-一个简化的通用Agent框架MVP版本，实现基本的AI对话和工具调用能力。
+一个面向生产演进的通用 Agent 核心服务，提供对话编排、工具调用（含 MCP）与 Skill 能力扩展。
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
+
+## 🔍 项目特点
+
+- **编排驱动**: 基于 LangGraph 的状态流编排，支持多步骤任务执行
+- **工具生态集成**: 统一接入内置工具与 MCP 工具，便于能力扩展
+- **MCP 降级容错**: 外部 MCP 服务异常时不阻塞核心启动，可降级运行
+- **Skill 分级加载**: 支持 `metadata/full/resources`，按成本与效果灵活配置
+- **流式交互**: 支持 SSE 流式响应，便于前端实时展示推理过程
+- **可运维性**: 结构化日志、健康检查与服务注册机制，便于生产部署
 
 ## 🚀 快速开始
 
@@ -30,17 +39,17 @@
 
 ### 📋 项目信息
 - [项目结构](docs/project/structure.md) - 代码组织结构
-- [路线图](docs/project/roadmap.md) - 版本规划
 - [贡献指南](docs/project/contributing.md) - 如何贡献代码
 
 ### 📖 其他文档
-- [功能特性](docs/features.md) - MVP功能说明
+- [功能特性](docs/features.md) - 核心能力说明
 - [技术栈](docs/tech-stack.md) - 使用的技术和工具
 
 ## ✨ 核心特性
 
 - 🧠 **LangGraph驱动**: 基于状态图的Agent编排引擎
 - 🔧 **工具集成**: 支持LangChain和自定义工具
+- 🧩 **MCP容错**: MCP服务不可用时自动降级，保证核心服务可用
 - 🌐 **REST API**: 标准HTTP接口，支持多语言客户端
 - 📦 **模块化设计**: 分层架构，易于扩展和维护
 - 🐳 **容器化**: Docker原生支持

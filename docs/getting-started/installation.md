@@ -74,8 +74,8 @@ poetry shell
 ### 使用conda
 ```bash
 # 创建conda环境
-conda create -n agent-mvp python=3.11
-conda activate agent-mvp
+conda create -n zero-agent python=3.11
+conda activate zero-agent
 
 # 安装依赖
 pip install -r requirements.txt

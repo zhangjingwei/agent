@@ -8,7 +8,7 @@
 
 ```
 ┌─────────────────────────────────────┐
-│           Universal Agent           │
+│             Zero Agent              │
 │  ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐   │
 │  │ LLM │ │Tool │ │Orch.│ │ API │   │
 │  │Layer│ │Layer│ │Layer│ │Layer│   │
@@ -346,7 +346,7 @@ Ctrl+C
 ```ini
 # /etc/systemd/system/universal-agent.service
 [Unit]
-Description=Universal Agent MVP
+Description=Zero Agent Service
 After=network.target
 Wants=network.target
 

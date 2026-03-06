@@ -2,7 +2,7 @@
 
 ## 概述
 
-Universal Agent MVP 提供RESTful API接口，支持与AI Agent进行对话交互。
+Zero Agent 提供 RESTful API 接口，支持与 AI Agent 进行对话交互。
 
 **Base URL**: `http://localhost:8080`
 

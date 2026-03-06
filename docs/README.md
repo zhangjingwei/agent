@@ -31,7 +31,6 @@
 
 ### 📋 项目信息
 - [项目结构](project/structure.md) - 代码组织结构和目录说明
-- [路线图](project/roadmap.md) - 版本规划和功能路线图（注意：包含Gateway相关内容）
 - [贡献指南](project/contributing.md) - 如何贡献代码和参与开发
 
 ### 📖 其他文档
