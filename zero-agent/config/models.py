@@ -208,6 +208,27 @@ class FilterConfig(BaseModel):
     config: Dict[str, Any] = Field(default_factory=dict)
 
 
+class SkillConfig(BaseModel):
+    """Skill 配置"""
+    id: str
+    name: str
+    path: str  # Skill 目录路径（相对于项目根目录）
+    enabled: bool = True
+    load_level: str = "metadata"  # metadata, full, resources
+    priority: int = 100  # 加载优先级，数字越小优先级越高
+
+
+class SkillMetadata(BaseModel):
+    """Skill 元数据（从 SKILL.md 的 YAML 前置提取）"""
+    name: str
+    description: str
+    version: Optional[str] = None
+    author: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    required_tools: List[str] = Field(default_factory=list)  # 依赖的工具列表
+    examples: List[str] = Field(default_factory=list)
+
+
 class AgentConfig(BaseModel):
     """Agent配置"""
     id: str
@@ -216,6 +237,7 @@ class AgentConfig(BaseModel):
     tools: List[ToolConfig] = Field(default_factory=list)
     mcp_servers: List[MCPConfig] = Field(default_factory=list)  # MCP 服务器配置
     mcp_tools: List[MCPToolConfig] = Field(default_factory=list)  # MCP 工具配置
+    skills: List[SkillConfig] = Field(default_factory=list)  # Skill 配置
     function_call: Dict[str, Any] = Field(default_factory=dict)
     llm_config: Dict[str, Any] = Field(default_factory=dict)
     filters: List[FilterConfig] = Field(default_factory=list)  # 过滤器配置

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "zero-agent"
 version = "0.1.0"
-description = "Nexus Agent - Universal AI Agent Framework"
+description = "Zero Agent - Universal AI Agent Framework"
 authors = [
     {name = "R&D Team", email = "team@example.com"}
 ]

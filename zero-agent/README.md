@@ -1,4 +1,4 @@
-# Nexus Agent
+# Zero Agent
 
 一个简化的通用Agent框架MVP版本，实现基本的AI对话和工具调用能力。
 

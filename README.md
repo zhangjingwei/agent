@@ -31,6 +31,7 @@
 - **多LLM支持**: 支持OpenAI、Anthropic、SiliconFlow等多种LLM提供商
 - **LangGraph编排**: 基于状态图的Agent工作流编排引擎
 - **工具集成**: 支持内置工具和MCP (Model Context Protocol) 工具
+- **Skill系统**: 支持渐进式加载的Agent技能系统，通过SKILL.md文件提供任务级指导
 - **流式响应**: 支持Server-Sent Events (SSE) 流式输出
 
 ### 企业级特性
@@ -67,6 +68,7 @@
 │  │  • LLM推理引擎                 │  │
 │  │  • 工具执行器                  │  │
 │  │  • MCP工具集成                 │  │
+│  │  • Skill系统（渐进式加载）     │  │
 │  │  • 会话管理                    │  │
 │  └────────────────────────────────┘  │
 └─────────────────────────────────────┘
@@ -82,39 +84,35 @@
 
 ## 快速开始
 
-### 一键启动（推荐）
+### 快速启动（推荐）
 
-使用提供的启动脚本同时启动所有服务：
+**适用场景**：单机开发、快速测试、不需要负载均衡的场景
 
 ```bash
-# 确保已配置环境变量（见配置说明）
-./start.sh
-```
-
-启动脚本会自动：
-1. 检查环境配置
-2. 启动Python AI核心服务（端口8082）
-3. 启动Go API网关（端口8080）
-4. 验证服务健康状态
-
-### 手动启动
-
-#### 方式一：单独启动服务
-
-**终端1 - 启动Python AI服务**:
-```bash
+# 终端1：启动 Python AI 服务（8082）
 cd zero-agent
 source ../venv/bin/activate
 python -m scripts.start
-```
 
-**终端2 - 启动Go API网关**:
-```bash
+# 终端2：启动 Go API 网关（8080）
 cd zero-gateway
 make run
 ```
 
-#### 方式二：启用服务发现和负载均衡
+### 启用服务发现和负载均衡（生产模式）
+
+**适用场景**：多实例部署、负载均衡测试、生产环境、高可用需求
+
+**特点**：
+- 支持服务注册与发现（基于 Redis）
+- 支持多个 Agent 实例负载均衡
+- 支持多种负载均衡策略（轮询、最少连接、随机等）
+- 需要 Redis 服务支持
+- 适合生产环境和性能测试
+
+**前置要求**：
+- Redis 服务必须运行（用于服务注册与发现）
+- 需要配置相关环境变量
 
 **启动Agent实例（启用服务注册）**:
 ```bash
@@ -151,7 +149,7 @@ go run cmd/api-gateway/main.go
 
 **启动多个Agent实例（测试负载均衡）**:
 
-在多个终端中启动不同端口的Agent实例：
+在多个终端中启动不同端口的Agent实例，Gateway会自动发现并负载均衡：
 
 ```bash
 # 实例1 (端口8082)
@@ -169,6 +167,19 @@ export API_PORT=8084
 export LOG_FILE=logs/agent-3.log
 python3 -m api.app
 ```
+
+**两种方式对比**：
+
+| 特性 | 方式一（简单模式） | 方式二（生产模式） |
+|------|------------------|------------------|
+| **启动命令** | `python -m scripts.start` | `python3 -m api.app` |
+| **配置复杂度** | 低（使用默认配置） | 中（需要环境变量） |
+| **Redis依赖** | 可选（仅缓存） | 必需（服务发现） |
+| **负载均衡** | 不支持 | 支持（多实例） |
+| **适用场景** | 开发、测试 | 生产、高可用 |
+| **扩展性** | 单实例 | 多实例横向扩展 |
+| **服务发现** | 无 | 自动发现和注册 |
+| **推荐用途** | 快速启动、功能验证 | 性能测试、生产部署 |
 
 ## 系统要求
 
@@ -303,6 +314,13 @@ llm_config:
 tools:
   - id: calculator
     enabled: true
+skills:
+  - id: test_skill
+    name: 测试技能
+    path: skills/examples/test_skill
+    enabled: true
+    load_level: full  # metadata, full, resources
+    priority: 50
 ```
 
 #### Go Gateway配置
@@ -393,6 +411,16 @@ curl -X POST http://localhost:8080/api/v1/chat/stream \
 curl http://localhost:8080/api/v1/tools
 ```
 
+### Skill系统说明
+
+Skill系统支持渐进式加载机制，通过SKILL.md文件为Agent提供任务级指导：
+
+- **Level 1 (metadata)**: 仅加载名称和描述，Token消耗最小（< 100 tokens）
+- **Level 2 (full)**: 加载完整Markdown内容（< 1000 tokens）
+- **Level 3 (resources)**: 加载所有资源文件（scripts/, references/, assets/等）
+
+Skill会在Agent初始化时自动加载，并在对话时作为上下文注入到LLM，帮助Agent更好地理解任务和提供指导。
+
 ## 项目结构
 
 ```
@@ -411,6 +439,13 @@ prodject/
 │   │   ├── builtin/        # 内置工具
 │   │   ├── mcp/            # MCP工具集成
 │   │   └── executor.py     # 工具执行器
+│   ├── skills/             # Skill系统
+│   │   ├── base.py         # Skill基础类
+│   │   ├── parser.py       # SKILL.md解析器
+│   │   ├── registry.py     # Skill注册器
+│   │   ├── loader.py       # 渐进式加载器
+│   │   ├── manager.py      # Skill管理器
+│   │   └── examples/       # 示例Skill
 │   ├── config/             # 配置管理
 │   │   ├── agents/         # Agent配置
 │   │   └── templates/      # 配置模板
@@ -432,8 +467,6 @@ prodject/
 │       ├── filters/       # 过滤器
 │       └── session/       # 会话管理
 │
-├── start.sh                # 系统启动脚本
-├── test.sh                 # 测试脚本
 └── README.md              # 项目文档
 ```
 
@@ -468,6 +501,52 @@ make test
 1. 在 `zero-agent/tools/builtin/` 创建工具模块
 2. 实现工具接口
 3. 在Agent配置中注册工具
+
+### 添加新Skill
+
+1. 在 `zero-agent/skills/examples/` 创建Skill目录
+2. 创建 `SKILL.md` 文件，包含YAML frontmatter和Markdown正文：
+   ```markdown
+   ---
+   name: 我的技能
+   description: 技能描述
+   version: 1.0.0
+   tags: [tag1, tag2]
+   required_tools: [tool1, tool2]
+   examples:
+     - "示例1"
+     - "示例2"
+   ---
+   
+   # 技能标题
+   
+   技能详细说明...
+   ```
+3. 在Agent配置中注册Skill：
+   ```yaml
+   skills:
+     - id: my_skill
+       name: 我的技能
+       path: skills/examples/my_skill
+       enabled: true
+       load_level: metadata  # metadata, full, resources
+       priority: 100
+   ```
+
+### 添加新Skill
+
+1. 在 `zero-agent/skills/examples/` 创建Skill目录
+2. 创建 `SKILL.md` 文件，包含YAML frontmatter和Markdown正文
+3. 在Agent配置中注册Skill：
+   ```yaml
+   skills:
+     - id: my_skill
+       name: 我的技能
+       path: skills/examples/my_skill
+       enabled: true
+       load_level: metadata  # metadata, full, resources
+       priority: 100
+   ```
 
 ### 添加新LLM提供商
 
@@ -555,6 +634,7 @@ export LOG_LEVEL="debug"
 - [x] 熔断器机制
 - [x] 过滤器系统
 - [x] MCP工具集成
+- [x] Skill系统支持（渐进式加载）
 
 ### 计划中
 - [ ] Python服务Nuitka编译

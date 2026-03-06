@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 import logging
 
-from .models import AgentConfig, ToolConfig, MCPConfig, MCPToolConfig, FilterConfig
+from .models import AgentConfig, ToolConfig, MCPConfig, MCPToolConfig, FilterConfig, SkillConfig
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +107,12 @@ class ConfigLoader:
             for mcp_tool_data in data.get('mcp_tools', [])
         ]
         
+        # 解析 Skill 配置
+        skills = [
+            SkillConfig(**skill_data)
+            for skill_data in data.get('skills', [])
+        ]
+        
         # 解析过滤器配置
         filters = [
             FilterConfig(**filter_data)
@@ -132,17 +138,27 @@ class ConfigLoader:
         ]
         
         # 构建 AgentConfig
-        return AgentConfig(
+        agent_config = AgentConfig(
             id=data.get('id', 'zero'),
             name=data.get('name', 'Default Agent'),
             description=data.get('description', ''),
             tools=tools,
             mcp_servers=mcp_servers,
             mcp_tools=mcp_tools,
+            skills=skills,  # 添加 Skill 配置
             function_call=data.get('function_call', {}),
             llm_config=llm_config,
-            filters=filters
+            filters=filters,
+            timeouts=data.get('timeouts', {}),  # 添加超时配置
+            concurrency=data.get('concurrency', {})  # 添加并发配置
         )
+        
+        # 添加调试日志
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"解析配置完成 - Agent ID: {agent_config.id}, Skills: {len(agent_config.skills)}, MCP Servers: {len(agent_config.mcp_servers)}")
+        
+        return agent_config
 
     @staticmethod
     def _resolve_env_vars(config: Dict[str, Any]) -> Dict[str, Any]:

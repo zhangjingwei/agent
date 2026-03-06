@@ -53,11 +53,6 @@ zero-gateway/logs/
 .coverage
 htmlcov/
 
-# Documentation (non-core business logic)
-docs/
-*.md
-!README.md
-
 # Scripts and deployment files (infrastructure)
 Makefile
 zero-agent/Makefile
@@ -84,6 +79,4 @@ node_modules/
 .git/
 .gitignore
 
-# Cursor specific
-.cursor/
 terminals/

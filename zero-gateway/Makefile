@@ -1,4 +1,4 @@
-# Nexus Gateway Makefile
+# Zero Gateway Makefile
 
 .PHONY: help build clean test docker-build docker-run proto-gen
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Nexus Agent Core - AI服务启动脚本
+Zero Agent Core - AI服务启动脚本
 
 此脚本启动Python AI核心服务，提供LangGraph工作流和MCP工具编排。
 服务运行在8082端口，通过HTTP/2与Go API网关通信。
@@ -58,7 +58,7 @@ def get_current_llm_info():
 
 def main():
     """主启动函数"""
-    logger.info("Starting Nexus Agent Core (AI Service)...")
+    logger.info("Starting Zero Agent Core (AI Service)...")
 
     # 检查环境
     if not check_environment():
@@ -77,7 +77,7 @@ def main():
     numeric_level = getattr(logging, log_level.upper(), logging.INFO)
     logging.getLogger().setLevel(numeric_level)
 
-    logger.info(f"Starting Nexus Agent Core (AI service) on {host}:{port}")
+    logger.info(f"Starting Zero Agent Core (AI service) on {host}:{port}")
     logger.info("This service provides AI inference and MCP tool orchestration via HTTP/2")
 
     try:

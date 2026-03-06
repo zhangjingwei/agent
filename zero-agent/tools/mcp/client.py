@@ -128,11 +128,27 @@ class MCPClient:
 
         except Exception as e:
             logger.error(f"连接MCP服务器失败 {self.config.id}: {str(e)}")
-            # 确保在异常情况下也清理资源
-            try:
-                await self.disconnect()
-            except Exception as cleanup_error:
-                logger.warning(f"清理失败连接时出错 {self.config.id}: {str(cleanup_error)}")
+            # 快速清理资源，避免阻塞（同步快速清理，不创建后台任务）
+            self._stop_reading = True
+            if self.process:
+                try:
+                    # 快速关闭文件描述符
+                    for fd in [self.process.stdin, self.process.stdout, self.process.stderr]:
+                        if fd:
+                            try:
+                                fd.close()
+                            except:
+                                pass
+                    # 快速终止进程（不等待）
+                    try:
+                        self.process.terminate()
+                        # 不等待进程退出，直接标记为 None，让进程自然退出或由系统清理
+                        self.process = None
+                    except:
+                        self.process = None
+                except Exception as cleanup_error:
+                    logger.debug(f"快速清理时出错 {self.config.id}: {str(cleanup_error)}")
+                    self.process = None
             raise
 
     async def disconnect(self):
@@ -152,14 +168,32 @@ class MCPClient:
                     logger.warning(f"取消待处理请求失败 {request_id}: {str(e)}")
         self._pending_requests.clear()
 
-        # 等待读取线程退出
+        # 等待读取线程退出（改进：异步等待，避免阻塞）
         if self._read_thread and self._read_thread.is_alive():
+            # 先关闭进程的 stdout，让读取线程自然退出
+            if self.process and self.process.stdout:
+                try:
+                    self.process.stdout.close()
+                except Exception:
+                    pass
+            
+            # 异步等待线程退出，避免阻塞事件循环
+            def wait_for_thread():
+                """同步等待线程退出"""
+                self._read_thread.join(timeout=3.0)
+                return self._read_thread.is_alive()
+            
             try:
-                self._read_thread.join(timeout=2)
-                if self._read_thread.is_alive():
-                    logger.warning(f"读取线程未能及时退出 {self.config.id}")
+                thread_still_alive = await asyncio.wait_for(
+                    asyncio.to_thread(wait_for_thread),
+                    timeout=3.5  # 总超时时间稍长于线程 join 超时
+                )
+                if thread_still_alive:
+                    logger.debug(f"读取线程仍在运行 {self.config.id}，将在进程终止后自动退出")
+            except asyncio.TimeoutError:
+                logger.debug(f"等待读取线程退出超时 {self.config.id}，继续清理进程")
             except Exception as e:
-                logger.warning(f"等待读取线程退出时出错 {self.config.id}: {str(e)}")
+                logger.debug(f"等待读取线程退出时出错 {self.config.id}: {str(e)}")
 
         # 清理进程资源
         if self.process:
@@ -171,17 +205,42 @@ class MCPClient:
                     except Exception as e:
                         logger.debug(f"关闭 stdin 时出错 {self.config.id}: {str(e)}")
 
-                # 终止进程
+                # 终止进程（改进：先关闭文件描述符，再终止）
+                # 先关闭 stdout/stderr，让读取线程自然退出
+                if self.process.stdout:
+                    try:
+                        self.process.stdout.close()
+                    except Exception:
+                        pass
+                if self.process.stderr:
+                    try:
+                        self.process.stderr.close()
+                    except Exception:
+                        pass
+                
+                # 终止进程（异步等待，避免阻塞）
                 self.process.terminate()
                 try:
-                    self.process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    logger.warning(f"MCP服务器进程 {self.config.id} 未能正常终止，强制杀死")
+                    # 使用异步方式等待进程退出，避免阻塞事件循环
+                    await asyncio.wait_for(
+                        asyncio.to_thread(self.process.wait),
+                        timeout=3.0
+                    )
+                except asyncio.TimeoutError:
+                    logger.debug(f"MCP服务器进程 {self.config.id} 未能正常终止，强制杀死")
                     try:
                         self.process.kill()
-                        self.process.wait()
+                        # 强制杀死后异步等待
+                        await asyncio.wait_for(
+                            asyncio.to_thread(self.process.wait),
+                            timeout=1.0
+                        )
+                    except asyncio.TimeoutError:
+                        logger.debug(f"强制杀死进程后等待超时 {self.config.id}，继续清理")
                     except Exception as e:
-                        logger.warning(f"强制杀死进程时出错 {self.config.id}: {str(e)}")
+                        logger.debug(f"强制杀死进程时出错 {self.config.id}: {str(e)}")
+                except Exception as e:
+                    logger.debug(f"等待进程退出时出错 {self.config.id}: {str(e)}")
 
                 # 确保所有文件描述符都已关闭
                 if self.process.stdout:

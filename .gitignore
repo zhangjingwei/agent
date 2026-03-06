@@ -207,12 +207,12 @@ secrets/
 *.pem
 
 # Project specific ignores
-# Nexus Agent Python virtual environment and build artifacts
+# Zero Agent Python virtual environment and build artifacts
 zero-agent/venv/
 zero-agent/nexus_agent.egg-info/
 zero-agent/=*
 
-# Nexus Gateway Go build artifacts
+# Zero Gateway Go build artifacts
 zero-gateway/build/
 zero-gateway/bin/
 
@@ -244,3 +244,19 @@ access.log
 error.log
 debug.log
 venv/*.*
+
+# Additional secret files
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+secrets/
+secrets.*
+.env.local
+.env.*.local
+config.yaml
+config.local.yaml
+*.secret
+credentials.json
+*.credentials
